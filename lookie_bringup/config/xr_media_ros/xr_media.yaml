@@ -1,0 +1,9 @@
+# xr_media_ros for Lookie teleop: XR card only (headset pose, controllers, buttons), no media streams.
+xr_media_node:
+  ros__parameters:
+    topic_prefix: /xr_media
+    server:
+      port: 9443
+      max_clients: 2
+      cert_path: ""
+      key_path: ""

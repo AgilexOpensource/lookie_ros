@@ -1,0 +1,236 @@
+# Lookie neo with agx_gripper, differential chassis.
+# Set urdf to the model file and package_dirs to its resource package directory.
+model:
+  file: ${urdf}
+  package_dirs: ["${package_dirs}"]
+  root: free_flyer
+  mimic: coupled
+  joint_limits:
+    position:
+      lower:
+        l_arm_joint4: 0.0873  # a fully stretched elbow can fold outward and get stuck
+        r_arm_joint4: 0.0873
+        l_arm_joint1: -2.007  # j1/j2/j3: measured convergence values
+        r_arm_joint1: -0.921
+        l_arm_joint2: 0.260
+        r_arm_joint2: 0.260
+        l_arm_joint3: -2.090
+        r_arm_joint3: -0.649
+      upper:
+        l_arm_joint1: 0.921
+        r_arm_joint1: 2.007
+        l_arm_joint3: 0.649
+        r_arm_joint3: 2.090
+rate_hz: 50
+feedback_timeout_s: 0.25
+realtime: true
+# Real-time thread for run(); failures only warn. Needs root, CAP_SYS_NICE/CAP_IPC_LOCK or rtprio/memlock limits.
+thread:
+  priority: 50        # 1-99 enables SCHED_FIFO, higher wins; 0 disables
+  cpus: []            # empty: no pinning; logical CPU indices from 0, e.g. [2]
+  lock_memory: false  # true locks the whole process in RAM (mlockall)
+solver:
+  mode: layered_independent
+  damping: 0.001
+robot:
+  type: loopback
+  initial:
+    torso_joint1: 0.2
+    torso_joint2: 0.0
+    head_joint1: 0.0
+    head_joint2: 0.0
+    l_arm_joint1: 0.0
+    l_arm_joint2: 1.57
+    l_arm_joint3: -1.57
+    l_arm_joint4: 1.57
+    l_arm_joint5: 1.57
+    l_arm_joint6: 0.0
+    l_arm_joint7: 0.0
+    r_arm_joint1: 0.0
+    r_arm_joint2: 1.57
+    r_arm_joint3: 1.57
+    r_arm_joint4: 1.57
+    r_arm_joint5: -1.57
+    r_arm_joint6: 0.0
+    r_arm_joint7: 0.0
+modules:
+  chassis:
+    type: chassis
+    chassis:
+      command_timeout_s: 0.25
+      kinematics: differential
+      base_frame: chassis_base_link
+      max_linear_velocity: 0.5  # real-robot cap, kept
+      max_angular_velocity: 1.0
+      max_linear_acceleration: 2.5
+      max_linear_deceleration: 2.5
+      max_linear_reversal_deceleration: 2.5
+      max_angular_acceleration: 5.0
+      max_angular_deceleration: 5.0
+      max_angular_reversal_deceleration: 5.0
+      max_linear_jerk: 10.0
+      max_angular_jerk: 15.0
+      position_tolerance: 0.001
+      orientation_tolerance: 0.002
+      target_position_deadband: 0.02
+      target_orientation_deadband: 0.035
+    # period_s: 0.02  # engine dt replaces it
+  torso_pose:
+    type: frame_target
+    frame: chest_link
+    joints: [torso_joint1, torso_joint2]
+    reference: chassis_base_link
+    weight: 1
+    position_weight: [0, 0, 5]  # lift only moves z
+    orientation_weight: [0, 1, 0]  # torso_joint2 pitches about world y
+    world_axes: true
+    lm_damping: 0.1
+    position_tolerance: 0.001
+    orientation_tolerance: 0.01
+    task: {level: 0}
+    home_motion: {velocity_scale: 0.1667, timeout_s: 2.0}
+    trajectory:
+      lead_speed_scale: 3.0
+      position: {velocity: 1.0, acceleration: 2.5, deceleration: 2.5, reversal_deceleration: 5.0, jerk: 25.0}
+      orientation: {velocity: 3.0, acceleration: 5.0, deceleration: 5.0, reversal_deceleration: 10.0, jerk: 50.0}
+  left_arm_pose:
+    type: frame_target
+    frame: l_gripper_tip
+    joints: [l_arm_joint1, l_arm_joint2, l_arm_joint3, l_arm_joint4, l_arm_joint5, l_arm_joint6, l_arm_joint7]
+    # joints: [torso_joint1, torso_joint2, l_arm_joint1, l_arm_joint2, l_arm_joint3, l_arm_joint4, l_arm_joint5, l_arm_joint6, l_arm_joint7]  # arms share the waist
+    reference: chassis_base_link
+    weight: 5
+    orientation_weight: [0.2, 0.2, 0.2]
+    lm_damping: 0.1
+    task: {level: 1}
+    home_motion: {velocity_scale: 0.1, timeout_s: 2.0}
+    trajectory:
+      # lead_speed_scale: 1.5
+      lead_speed_scale: 5.0
+      position: {velocity: 2.0, acceleration: 20.0, deceleration: 20.0, reversal_deceleration: 40.0, jerk: 200.0}
+      # orientation: {velocity: 6.0, acceleration: 10.0, deceleration: 10.0, reversal_deceleration: 20.0, jerk: 100.0}
+      orientation: {velocity: 5.0, acceleration: 10.0, deceleration: 10.0, reversal_deceleration: 20.0, jerk: 100.0}
+  right_arm_pose:
+    type: frame_target
+    frame: r_gripper_tip
+    joints: [r_arm_joint1, r_arm_joint2, r_arm_joint3, r_arm_joint4, r_arm_joint5, r_arm_joint6, r_arm_joint7]
+    # joints: [torso_joint1, torso_joint2, r_arm_joint1, r_arm_joint2, r_arm_joint3, r_arm_joint4, r_arm_joint5, r_arm_joint6, r_arm_joint7]  # arms share the waist
+    reference: chassis_base_link
+    weight: 5
+    orientation_weight: [0.2, 0.2, 0.2]
+    lm_damping: 0.1
+    task: {level: 1}
+    home_motion: {velocity_scale: 0.1, timeout_s: 2.0}
+    trajectory:
+      # lead_speed_scale: 1.5
+      lead_speed_scale: 5.0
+      position: {velocity: 2.0, acceleration: 20.0, deceleration: 20.0, reversal_deceleration: 40.0, jerk: 200.0}
+      # orientation: {velocity: 6.0, acceleration: 10.0, deceleration: 10.0, reversal_deceleration: 20.0, jerk: 100.0}
+      orientation: {velocity: 5.0, acceleration: 10.0, deceleration: 10.0, reversal_deceleration: 20.0, jerk: 100.0}
+  left_arm_null:
+    type: null_space
+    primary: left_arm_pose
+    preference: manipulability
+    manipulability_rate: 1.0
+    task: {level: 1}
+    reference: initial
+    posture_weight: 0.05
+    manipulability_weight: 0.1
+  right_arm_null:
+    type: null_space
+    primary: right_arm_pose
+    preference: manipulability
+    manipulability_rate: 1.0
+    task: {level: 1}
+    reference: initial
+    posture_weight: 0.05
+    manipulability_weight: 0.1
+  torso_joint:
+    type: joint_target
+    joints: [torso_joint1, torso_joint2]
+    home_motion: {velocity_scale: 0.1667, timeout_s: 2.0}
+    on_idle: claim
+    release_after_s: 0.25
+  left_arm_joint:
+    type: joint_target
+    joints: [l_arm_joint1, l_arm_joint2, l_arm_joint3, l_arm_joint4, l_arm_joint5, l_arm_joint6, l_arm_joint7]
+    home_motion: {velocity_scale: 0.1667, timeout_s: 2.0}
+    on_idle: claim
+    release_after_s: 0.25
+    task: {level: 1}
+  right_arm_joint:
+    type: joint_target
+    joints: [r_arm_joint1, r_arm_joint2, r_arm_joint3, r_arm_joint4, r_arm_joint5, r_arm_joint6, r_arm_joint7]
+    home_motion: {velocity_scale: 0.1667, timeout_s: 2.0}
+    on_idle: claim
+    release_after_s: 0.25
+    task: {level: 1}
+  left_gripper_joint:
+    type: joint_target
+    joints: [l_gripper]  # followers are coupled mimics
+    on_idle: claim
+    release_after_s: 0.25
+    task: {level: 1}
+  right_gripper_joint:
+    type: joint_target
+    joints: [r_gripper]
+    on_idle: claim
+    release_after_s: 0.25
+    task: {level: 1}
+  head_joint:
+    type: joint_target
+    joints: [head_joint1, head_joint2]
+    home_motion: {velocity_scale: 0.1667, timeout_s: 2.0}
+    on_idle: claim
+    release_after_s: 0.25
+  gaze:
+    type: gaze
+    frame: head_link2
+    joints: [head_joint1, head_joint2]
+    frames: [l_gripper_tip, r_gripper_tip]
+    max_velocity: 1.5
+    target_idle_s: 5.0
+  # waist is z-lift + pitch only, cannot shift the CoM in XY
+  # com:
+  #   type: center_of_mass
+  #   frame: chassis_base_link
+  #   # drive wheels and caster contacts
+  #   polygon: [[0.1805, 0.1785], [0.0, 0.2275], [-0.235, 0.0], [0.0, -0.2275], [0.1805, -0.1785]]
+  #   # margin: 0.02
+  #   margin: 0.05
+  #   recovery_tasks: [torso_pose]
+  #   closed_loop: true
+  #   payloads:
+  #     - {frame: l_gripper_tip, mass: 3.0}
+  #     - {frame: r_gripper_tip, mass: 3.0}
+  self_collision:
+    type: self_collision
+    urdf: ${urdf}
+    groups:
+      - {name: left_arm, joint_prefixes: [l_, left_]}
+      - {name: right_arm, joint_prefixes: [r_, right_]}
+    exclude_pairs:
+      - [head_base_link_0, head_link2_0]
+      - [torso_link2_0, head_link2_0]
+      - [l_arm_base_link_0, l_arm_link2_0]
+      - [r_arm_base_link_0, r_arm_link2_0]
+      - [l_flange_0, l_arm_link5_0]
+      - [r_flange_0, r_arm_link5_0]
+      - [l_arm_link5_0, l_arm_link7_0]
+      - [r_arm_link5_0, r_arm_link7_0]
+    # the two grippers (base, jaws) never collide-check each other
+    exclude_subtrees:
+      - [l_gripper_base_link, r_gripper_base_link]
+    closed_loop: true
+    # constraint: {clearance: 0.002, activation_margin: 0.02, hysteresis: 0.005, gain: 1.5}
+    constraint: {clearance: 0.002, activation_margin: 0.01, hysteresis: 0.005, gain: 1.5, approach_deceleration: 20}
+#  obstacles:
+#    type: world_collision
+#    velocity_timeout_s: 0.2
+#    urdf: ${urdf}
+#    obstacles:
+#      - name: table
+#        shape: {type: box, size: [0.6, 1.0, 0.05]}
+#        pose: {position: [0.9, 0, 0.75]}
+#        enabled: false
+#    constraint: {clearance: 0.002, activation_margin: 0.02, hysteresis: 0.005, gain: 1.5}

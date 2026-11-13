@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>lookie_bringup</name>
+  <version>0.1.0</version>
+  <description>Lookie bringup: drivers combined with RViz joint control</description>
+
+  <maintainer email="contact@agilex.ai">Agilex Robotics</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>driver_bringup</exec_depend>
+  <exec_depend>lookie_description</exec_depend>
+  <exec_depend>xr_media_ros</exec_depend>
+  <exec_depend>lookie_wbc_teleop</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

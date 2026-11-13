@@ -1,0 +1,96 @@
+# lookie_wbc_teleop tuning shared by all Lookie models.
+# Model-specific values (body_axes, end effector) live in <model>.yaml, loaded after this file.
+# Unlisted parameters use the node defaults (lookie_control/docs/vr_teleop_dev_design.md §13).
+/**/lookie_wbc_teleop:
+  ros__parameters:
+    xr_namespace: /xr_media
+    rate_hz: 50.0
+
+    # buttons
+    long_press_s: 1.0
+    double_tap_s: 0.4
+    grip_on: 0.6
+    grip_off: 0.4
+
+    # sticks
+    deadzone: 0.15
+    max_vx: 0.5
+    max_vy: 0.5
+    max_wz: 1.0
+    joy_z_rate: 0.10         # m/s, right stick y in z mode
+    joy_pitch_rate: 0.3      # rad/s, right stick y in pitch mode
+
+    # headset mount / calibration (A)
+    headset_forward_axis: [1.0, 0.0, 0.0]
+    mount_max_deg: 35.0
+    yaw_warn_deg: 15.0
+    calib_x: [0.15, 0.70]
+    calib_z: [-0.6, 0.3]
+    min_cross: 0.10
+    max_side: 0.20
+    spacing_tol: 0.10
+    rel_ori_warn_deg: 45.0
+
+    # mapping
+    R_body_to_torso: [0.0, 0.0, 0.0]    # rpy
+    controller_tcp: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]   # xyz + rpy
+    # C_left / C_right: quaternion (w, x, y, z); unset = arm home orientation from discover
+
+    # waist (ranges are relative to the value at A)
+    k_z: 1.0
+    k_pitch: 1.0
+    waist_z_range: [-0.3, 0.1]
+    waist_pitch_range: [-0.2, 0.6]
+    waist_yaw_range: [-0.8, 0.8]
+    waist_pitch_limits_deg: [-45.0, 90.0]   # absolute hard limit in base frame (back, forward)
+    waist_z_rate: 0.2
+    waist_pitch_rate: 0.8
+    waist_yaw_rate: 1.0
+    default_body_mode: waist  # waist | chassis (Y long press toggles, only with the chassis axis)
+
+    # chassis (headset pose mode)
+    chassis_scale: 1.0
+    chassis_deadband_pos: 0.02
+    chassis_deadband_deg: 2.0
+    chassis_v_max: 0.5
+    chassis_w_max: 1.0
+    chassis_max_dev_pos: 0.2    # target clamped within this of chassis feedback (m), no disable
+    chassis_max_dev_deg: 15.0
+    cmd_vel_min_hz: 10.0
+
+    # arm workspace (F_t)
+    shoulder_offsets: [0.0, 0.2005, 0.05, 0.0, -0.2005, 0.05]   # left xyz, right xyz
+    r_min: 0.2
+    r_max: 0.75
+    x_min: 0.1
+    ws_z_range: [-0.6, 0.3]
+    midline_delta: 0.05
+    min_hand_gap: 0.1
+
+    # catch-up / tracking
+    v_catch: 0.15
+    w_catch: 0.8
+    catch_pos_tol: 0.02
+    catch_ori_tol_deg: 5.0
+    catch_timeout_s: 5.0
+    catch_fast_v: 0.8
+    catch_fast_w: 3.0
+    v_max: 1.0
+    w_max: 3.0
+
+    # safety
+    xr_timeout_s: 0.2
+    jump_pos: 0.10
+    jump_ang_deg: 30.0
+    max_reach: 1.0
+    kstone_timeout_s: 0.3
+    require_fresh: true
+    track_err_rate_pos: 1.0   # m/s of filtered position error
+    track_err_rate_ang: 6.0   # rad/s of filtered orientation error
+    track_err_rate_n: 3
+    track_err_lpf_hz: 10.0
+
+    # home
+    home_modules: [torso_pose, left_arm_pose, right_arm_pose]   # end effectors are never homed
+    home_timeout_s: 20.0
+    outcome_timeout_s: 1.0
