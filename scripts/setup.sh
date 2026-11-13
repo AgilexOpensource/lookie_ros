@@ -127,9 +127,10 @@ install_python() {
 }
 
 install_rosdeps() {
-  info "Installing ROS dependencies with rosdep (xr_media is reported unresolved; pip installs it)."
+  info "Installing ROS dependencies with rosdep."
   rosdep update
-  rosdep install --from-paths "$WS/src" --ignore-src -r -y
+  # xr_media comes from pip; warehouse_ros_mongo is not released for Humble.
+  rosdep install --from-paths "$WS/src" --ignore-src -r -y --skip-keys "xr_media warehouse_ros_mongo"
 }
 
 build() {

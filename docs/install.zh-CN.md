@@ -60,14 +60,14 @@ pip install git+https://github.com/agilexrobotics/pyAgxArm.git \
 ```bash
 cd ~/lookie_ws
 source /opt/ros/humble/setup.bash
-rosdep install --from-paths src --ignore-src -r -y
+rosdep install --from-paths src --ignore-src -r -y --skip-keys "xr_media warehouse_ros_mongo"
 python3 -m colcon build
 source install/setup.bash
 ```
 
-`python3 -m colcon` 让节点使用虚拟环境的 Python。加 `--packages-up-to <功能包>` 只编译该包及其依赖。rosdep 会提示 `xr_media` 无法解析，它已由 pip 安装。
+`python3 -m colcon` 让节点使用虚拟环境的 Python。加 `--packages-up-to <功能包>` 只编译该包及其依赖。`--skip-keys` 跳过已由 pip 安装的 `xr_media`，以及 agx_arm_ros 的 MoveIt 包声明、但 Humble 没有提供的 `warehouse_ros_mongo`。
 
-每个新终端都要先执行 `source ~/lookie_ws/.venv/bin/activate`，再 `source ~/lookie_ws/install/setup.bash`，也可以把这两行写进 `~/.bashrc`。
+每个新终端都要先执行 `source ~/lookie_ws/.venv/bin/activate`，再 `source ~/lookie_ws/install/setup.bash`，也可以把这两行写进 `~/.bashrc`。然后按 [lookie_bringup](../lookie_bringup/README.zh-CN.md#使用) 设置机型。
 
 ## 更新
 

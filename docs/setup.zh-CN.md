@@ -37,10 +37,10 @@ ros2 launch lookie_bringup lookie.launch.py
 
 完整安装的步骤：
 
-1. 安装缺少的 apt 包（vcstool、colcon、rosdep、venv、pip），使用 `sudo` 前先询问。从未执行过 `rosdep init` 时执行它。
+1. 安装缺少的 apt 包（编译工具、vcstool、colcon、rosdep、venv、pip），使用 `sudo` 前先询问。从未执行过 `rosdep init` 时执行它。
 2. 导入 [lookie.repos](../lookie.repos) 中的仓库，已存在的仓库保持不变。
 3. 把 Python SDK 装到 `~/lookie_ws/.venv`。系统 Python 允许 pip 安装时，脚本会询问用虚拟环境还是系统 Python。
-4. 用 rosdep 安装 ROS 依赖。`xr_media` 会显示无法解析，它已由 pip 安装。
+4. 用 rosdep 安装 ROS 依赖，跳过已由 pip 安装的 `xr_media` 和 Humble 没有提供的 `warehouse_ros_mongo`。
 5. 用 `python3 -m colcon build` 编译。
 6. 把所选机型写入 `~/.bashrc`。
 

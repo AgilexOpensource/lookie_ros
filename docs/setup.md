@@ -37,10 +37,10 @@ ros2 launch lookie_bringup lookie.launch.py
 
 A full install runs these steps:
 
-1. Install missing apt packages (vcstool, colcon, rosdep, venv, pip), asking before `sudo`. Run `rosdep init` if it was never run.
+1. Install missing apt packages (build tools, vcstool, colcon, rosdep, venv, pip), asking before `sudo`. Run `rosdep init` if it was never run.
 2. Import the repositories in [lookie.repos](../lookie.repos). Existing ones are left as they are.
 3. Install the Python SDKs into `~/lookie_ws/.venv`. Where the system Python allows pip, the script asks whether to use a venv or the system Python.
-4. Install ROS dependencies with rosdep. `xr_media` is reported unresolved; pip already installed it.
+4. Install ROS dependencies with rosdep, skipping `xr_media` (installed by pip) and `warehouse_ros_mongo` (not shipped for Humble).
 5. Build with `python3 -m colcon build`.
 6. Write the chosen model to `~/.bashrc`.
 

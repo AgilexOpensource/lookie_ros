@@ -60,14 +60,14 @@ Without a venv, run the same `pip install` with `pip3` and use plain `colcon` be
 ```bash
 cd ~/lookie_ws
 source /opt/ros/humble/setup.bash
-rosdep install --from-paths src --ignore-src -r -y
+rosdep install --from-paths src --ignore-src -r -y --skip-keys "xr_media warehouse_ros_mongo"
 python3 -m colcon build
 source install/setup.bash
 ```
 
-`python3 -m colcon` makes the nodes use the venv Python. Add `--packages-up-to <package>` to build one package and its dependencies. rosdep reports `xr_media` as unresolved; pip already installed it.
+`python3 -m colcon` makes the nodes use the venv Python. Add `--packages-up-to <package>` to build one package and its dependencies. `--skip-keys` skips `xr_media`, which pip already installed, and `warehouse_ros_mongo`, which the agx_arm_ros MoveIt package declares but Humble does not ship.
 
-In every new terminal, run `source ~/lookie_ws/.venv/bin/activate` before `source ~/lookie_ws/install/setup.bash`, or add both lines to `~/.bashrc`.
+In every new terminal, run `source ~/lookie_ws/.venv/bin/activate` before `source ~/lookie_ws/install/setup.bash`, or add both lines to `~/.bashrc`. Then set the model as described in [lookie_bringup](../lookie_bringup/README.md#usage).
 
 ## Update
 
