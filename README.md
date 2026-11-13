@@ -87,14 +87,17 @@ The [VR teleop quickstart](lookie_teleop/docs/vr_teleop_quickstart.md) covers th
 [kstone_viewer](https://github.com/AgilexOpensource/kstone_viewer) shows the kstone state, targets and solve quality in a browser:
 
 ```bash
-pip install "git+https://github.com/AgilexOpensource/kstone_viewer.git"
+python3 -m venv ~/.venvs/kstone-viewer
+~/.venvs/kstone-viewer/bin/pip install "git+https://github.com/AgilexOpensource/kstone_viewer.git"
 ```
+
+It needs no ROS, so it has its own venv; the workspace venv pins `numpy<2`, which the viewer would upgrade.
 
 Start step 4 with `debug_port:=7311`, then run the viewer in another terminal:
 
 ```bash
 ros2 launch lookie_bringup kstone.launch.py debug_port:=7311
-kstone-viewer --connect 127.0.0.1:7311
+~/.venvs/kstone-viewer/bin/kstone-viewer --connect 127.0.0.1:7311
 ```
 
 Open http://127.0.0.1:8080. To view it from another computer, run `ssh -N -L 8080:127.0.0.1:8080 <user>@<robot-ip>` there and open the same address.

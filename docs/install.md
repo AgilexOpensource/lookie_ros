@@ -61,3 +61,8 @@ vcs import --recursive --skip-existing ~/lookie_ws/src < ~/lookie_ws/src/lookie_
 ```
 
 Then build again. The second command imports dependency repositories added since the last install.
+
+## Troubleshooting
+
+- `GitHub release metadata request failed` while installing `agx_motor_sdk`: the SDK downloads protocol libraries from GitHub, and anonymous access allows 60 API requests per hour per IP. Wait for the limit to reset, or set `GITHUB_TOKEN` to a GitHub token and install again.
+- `ModuleNotFoundError` from a driver at launch: activate the venv in that terminal before `source install/setup.bash`, then rebuild with `python3 -m colcon build`.

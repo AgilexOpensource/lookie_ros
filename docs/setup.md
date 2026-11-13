@@ -51,3 +51,5 @@ A full install runs these steps:
 - System apt packages, only after you confirm.
 
 The script is safe to rerun. Use `4` to switch the model and `2` to update.
+
+If a step fails, see [Troubleshooting](install.md#troubleshooting) in the manual install guide.

@@ -87,14 +87,17 @@ Lookie 机器人（Trio 和 Neo）的 ROS 2 功能包：驱动、基于 kstone �
 [kstone_viewer](https://github.com/AgilexOpensource/kstone_viewer) 在浏览器中显示 kstone 的状态、目标和求解质量：
 
 ```bash
-pip install "git+https://github.com/AgilexOpensource/kstone_viewer.git"
+python3 -m venv ~/.venvs/kstone-viewer
+~/.venvs/kstone-viewer/bin/pip install "git+https://github.com/AgilexOpensource/kstone_viewer.git"
 ```
+
+viewer 不依赖 ROS，所以单独用一个 venv；工作区 venv 固定了 `numpy<2`，装 viewer 会把它升级。
 
 第 4 步加上 `debug_port:=7311` 启动，再在另一个终端运行 viewer：
 
 ```bash
 ros2 launch lookie_bringup kstone.launch.py debug_port:=7311
-kstone-viewer --connect 127.0.0.1:7311
+~/.venvs/kstone-viewer/bin/kstone-viewer --connect 127.0.0.1:7311
 ```
 
 打开 http://127.0.0.1:8080。要在另一台电脑上查看，在那台电脑上执行 `ssh -N -L 8080:127.0.0.1:8080 <用户>@<机器人IP>`，再打开同一地址。

@@ -51,3 +51,5 @@ ros2 launch lookie_bringup lookie.launch.py
 - 系统 apt 包，仅在你确认后安装。
 
 脚本可重复运行。用 `4` 切换机型，用 `2` 更新。
+
+某一步失败时，见手动安装指南的[常见问题](install.zh-CN.md#常见问题)。

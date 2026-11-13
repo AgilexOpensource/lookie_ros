@@ -61,3 +61,8 @@ vcs import --recursive --skip-existing ~/lookie_ws/src < ~/lookie_ws/src/lookie_
 ```
 
 然后重新编译。第二条命令导入新增的依赖仓库。
+
+## 常见问题
+
+- 安装 `agx_motor_sdk` 时报 `GitHub release metadata request failed`：SDK 安装时会从 GitHub 下载协议库，匿名访问每个 IP 每小时只能请求 60 次 API。等限额重置，或把 `GITHUB_TOKEN` 设为 GitHub token 后重装。
+- 启动时驱动报 `ModuleNotFoundError`：在该终端先激活 venv 再 `source install/setup.bash`，并用 `python3 -m colcon build` 重新编译。
