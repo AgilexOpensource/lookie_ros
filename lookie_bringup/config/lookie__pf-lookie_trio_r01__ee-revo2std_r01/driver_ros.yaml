@@ -55,3 +55,4 @@
     is_scout_mini: true
     is_omni_wheel: true
     odom_topic_name: odom
+    odom_linear_velocity_sign: -1
