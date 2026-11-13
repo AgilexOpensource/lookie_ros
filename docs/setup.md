@@ -25,6 +25,8 @@ ros2 run lookie_bringup can_bind.sh
 ros2 launch lookie_bringup lookie.launch.py
 ```
 
+Before using VR, complete the [HTTPS preparation](install.md#https-for-vr). The script installs the XR SDK but does not generate or overwrite TLS certificates.
+
 ## Menu
 
 | Option | Action |

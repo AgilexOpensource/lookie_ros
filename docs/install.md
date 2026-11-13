@@ -55,6 +55,16 @@ pip install git+https://github.com/agilexrobotics/pyAgxArm.git \
 
 Without a venv, run the same `pip install` with `pip3` and use plain `colcon` below.
 
+## HTTPS for VR
+
+Before the first VR session, activate the workspace venv and generate a development certificate:
+
+```bash
+xr_media --init-certs
+```
+
+This overwrites `cert.pem` and `key.pem` under `${XDG_CONFIG_HOME:-$HOME/.config}/xr_media/tls`; skip it if valid certificates already exist. With the default empty certificate paths, the XR server discovers these files automatically. Open the printed **HTTPS** address in the Quest browser, accept the self-signed certificate and enter VR. Remote WebXR requires a secure context; an HTTP page loading successfully does not verify VR support. For custom certificate paths, see [xr_media_ros](https://github.com/AgilexOpensource/xr_media_ros/blob/main/docs/GUIDE.md).
+
 ## Build
 
 ```bash

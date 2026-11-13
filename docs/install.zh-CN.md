@@ -55,6 +55,16 @@ pip install git+https://github.com/agilexrobotics/pyAgxArm.git \
 
 不用虚拟环境时，用 `pip3` 执行同样的安装，下面改用 `colcon`。
 
+## VR 的 HTTPS 准备
+
+首次使用 VR 前，激活工作空间虚拟环境并生成开发证书：
+
+```bash
+xr_media --init-certs
+```
+
+此命令会覆盖 `${XDG_CONFIG_HOME:-$HOME/.config}/xr_media/tls` 下的 `cert.pem` 和 `key.pem`，已有有效证书时跳过。默认配置中的证书路径为空时，XR 服务会自动查找这些文件。在 Quest 浏览器打开节点打印的 **HTTPS** 地址，接受自签名证书后进入 VR。远程 WebXR 需要安全上下文；HTTP 页面能打开不代表 VR 可用。自定义证书路径见 [xr_media_ros](https://github.com/AgilexOpensource/xr_media_ros/blob/main/docs/GUIDE.zh-CN.md)。
+
 ## 编译
 
 ```bash
