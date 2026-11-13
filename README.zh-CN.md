@@ -8,9 +8,9 @@ Lookie 机器人（Trio 和 Neo）的 ROS 2 功能包：驱动、基于 kstone �
 
 | 功能包 | 说明 |
 | --- | --- |
-| [lookie_bringup](lookie_bringup/README.zh-CN.md) | 整机启动文件和各机型配置 |
+| [lookie_bringup](lookie_bringup/README.zh-CN.md) | 整机启动文件，以及驱动、kstone_ros 和遥操作的各机型配置 |
 | [lookie_driver](lookie_driver/README.zh-CN.md) | 头部、躯干、机械臂和底盘驱动，以及关节桥 |
-| [lookie_control](lookie_control/README.zh-CN.md) | 各机型的 kstone_ros 配置和启动文件 |
+| [lookie_control](lookie_control/README.zh-CN.md) | 按给定配置、URDF 和话题运行 kstone_ros 的启动文件，不含配置 |
 | [lookie_teleop](lookie_teleop/README.zh-CN.md) | VR 全身遥操作：把 xr_media_ros 输入转成 kstone_ros 目标 |
 
 依赖仓库由 [vcstool](https://github.com/dirk-thomas/vcstool) 克隆到本仓库旁边：

@@ -31,5 +31,5 @@ ros2 launch lookie_teleop teleop.launch.py namespace:=trio params_file:=/abs/a.y
 
 ## Documentation
 
-- [VR teleop quick start](docs/vr_teleop_quickstart.md) (Chinese)
+- [VR teleop quick start](docs/vr_teleop_quickstart.md)
 - [VR teleop design](docs/vr_teleop_dev_design.md) (Chinese)

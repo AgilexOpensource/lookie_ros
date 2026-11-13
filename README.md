@@ -8,9 +8,9 @@ ROS 2 packages for the Lookie robots (Trio and Neo): drivers, whole-body control
 
 | Package | Description |
 | --- | --- |
-| [lookie_bringup](lookie_bringup/README.md) | Whole-robot launch files and per-model configs |
+| [lookie_bringup](lookie_bringup/README.md) | Whole-robot launch files and per-model configs for drivers, kstone_ros and teleop |
 | [lookie_driver](lookie_driver/README.md) | Head, torso, arm and chassis drivers, and the joint bridge |
-| [lookie_control](lookie_control/README.md) | kstone_ros configs and launch file for each model |
+| [lookie_control](lookie_control/README.md) | Launch file that runs kstone_ros from a given config, URDF and topics; no configs |
 | [lookie_teleop](lookie_teleop/README.md) | VR whole-body teleop: turns xr_media_ros input into kstone_ros targets |
 
 Dependency repositories are cloned next to this one with [vcstool](https://github.com/dirk-thomas/vcstool):

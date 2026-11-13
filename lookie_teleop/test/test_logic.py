@@ -280,6 +280,59 @@ def test_workspace_fixed_arm_bounds_moving_arm():
     assert out["left"][1] >= -0.1 + WS.min_hand_gap - 1e-6
 
 
+def test_workspace_inner_exclusion_continuous_over_frames():
+    s = np.array(WS.shoulder_offsets["left"], dtype=float)
+    a, b = s + [0, 1e-8, 0], s - [0, 1e-8, 0]
+    # Without state the push-out direction d/|d| flips for inputs 2e-8 m apart.
+    jump = project({"left": a}, WS, np.eye(3))[0]["left"] - project({"left": b}, WS, np.eye(3))[0]["left"]
+    assert np.linalg.norm(jump) > 0.3
+    prev, steps = None, []
+    for f in range(100):
+        out, _ = project({"left": a if f % 2 else b}, WS, np.eye(3), prev={"left": prev})
+        if prev is not None:
+            steps.append(np.linalg.norm(out["left"] - prev))
+        prev = out["left"]
+    assert max(steps) < 0.03
+    assert max(steps[-10:]) < 1e-6
+    pa = project({"left": a}, WS, np.eye(3), prev={"left": prev})[0]["left"]
+    pb = project({"left": b}, WS, np.eye(3), prev={"left": prev})[0]["left"]
+    assert np.linalg.norm(pa - pb) < 1e-6
+
+
+def _ws_violation(out, rot, fixed):
+    worst = 0.0
+    for side, e in out.items():
+        n = np.linalg.norm(e - rot @ np.asarray(WS.shoulder_offsets[side], dtype=float))
+        mid = -WS.midline_delta - e[1] if side == "left" else e[1] - WS.midline_delta
+        worst = max(worst, WS.r_min - n, n - WS.r_max, WS.x_min - e[0],
+                    WS.z_range[0] - e[2], e[2] - WS.z_range[1], mid)
+    both = {**fixed, **out}
+    if len(both) == 2:
+        worst = max(worst, WS.min_hand_gap - (both["left"][1] - both["right"][1]))
+    return worst
+
+
+def test_workspace_repeated_projection_stays_feasible():
+    rng = np.random.default_rng(0)
+    for k in range(500):
+        pitch = rng.uniform(-0.5, 0.5)
+        c, sn = math.cos(pitch), math.sin(pitch)
+        rot = np.array([[c, 0, sn], [0, 1, 0], [-sn, 0, c]])
+        shoulders = {s: rot @ np.asarray(WS.shoulder_offsets[s], dtype=float) for s in ("left", "right")}
+        scale = 1e-6 if k % 4 == 0 else 1.0
+        targets = {s: shoulders[s] + rng.uniform(-0.3, 0.3, 3) * scale for s in shoulders}
+        fixed = {}
+        if k % 3 == 0:
+            fixed = {"right": np.array([0.3, rng.uniform(-0.4, 0.0), 0.0])}
+            del targets["right"]
+        out, _ = project(targets, WS, rot, fixed)
+        for _ in range(3):
+            again, clamped = project(out, WS, rot, fixed, prev=out)
+            assert _ws_violation(again, rot, fixed) <= 1e-6
+            assert clamped == set()
+            out = again
+
+
 # --- catch-up --------------------------------------------------------------------------------
 
 Q0 = np.array([1.0, 0.0, 0.0, 0.0])

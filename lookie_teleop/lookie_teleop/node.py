@@ -107,6 +107,7 @@ class Arm:
         self.pos = pos
         self.quat = quat
         self.catch = None
+        self.goal_proj = None
 
 
 class TeleopNode(Node):
@@ -601,9 +602,11 @@ class TeleopNode(Node):
             self._publish_arms(ft)
             return True
         projected, clamped = project({s: g[0] for s, g in goals.items()}, self.ws_cfg,
-                                     self.waist.pitch_rotation, fixed)
+                                     self.waist.pitch_rotation, fixed,
+                                     {s: self.arms[s].goal_proj for s in goals})
         for s, (_, rot) in goals.items():
             arm = self.arms[s]
+            arm.goal_proj = projected[s]
             gquat = matrix_to_quat(rot)
             if arm.mode == CATCHING:
                 arm.pos, arm.quat, status = arm.catch.step(arm.pos, arm.quat, projected[s], gquat, dt, now,

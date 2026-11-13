@@ -6,10 +6,24 @@
 
 已在 Ubuntu 22.04 + ROS 2 Humble 上测试通过。不支持更早的版本，更新的版本未经测试。下文命令以 Humble 为例。
 
+## 系统软件包
+
+```bash
+sudo apt update
+sudo apt install python3-vcstool python3-colcon-common-extensions python3-rosdep \
+  python3-venv python3-pip
+```
+
+每台机器初始化一次 rosdep。若 `/etc/ros/rosdep/sources.list.d` 已存在，跳过 `sudo rosdep init`：
+
+```bash
+sudo rosdep init
+rosdep update
+```
+
 ## 克隆
 
 ```bash
-sudo apt install python3-vcstool
 mkdir -p ~/lookie_ws/src && cd ~/lookie_ws/src
 git clone https://github.com/AgilexOpensource/lookie_ros.git
 vcs import --recursive < lookie_ros/lookie.repos

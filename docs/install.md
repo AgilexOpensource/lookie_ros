@@ -6,10 +6,24 @@ Manual install of the Lookie workspace. The [setup script](setup.md) runs the sa
 
 Tested on Ubuntu 22.04 with ROS 2 Humble. Older releases are not supported; newer ones are untested. The commands use Humble.
 
+## System packages
+
+```bash
+sudo apt update
+sudo apt install python3-vcstool python3-colcon-common-extensions python3-rosdep \
+  python3-venv python3-pip
+```
+
+Initialize rosdep once per machine. Skip `sudo rosdep init` if `/etc/ros/rosdep/sources.list.d` already exists:
+
+```bash
+sudo rosdep init
+rosdep update
+```
+
 ## Clone
 
 ```bash
-sudo apt install python3-vcstool
 mkdir -p ~/lookie_ws/src && cd ~/lookie_ws/src
 git clone https://github.com/AgilexOpensource/lookie_ros.git
 vcs import --recursive < lookie_ros/lookie.repos

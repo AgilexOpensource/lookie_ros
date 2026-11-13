@@ -1,6 +1,6 @@
 # lookie_teleop tuning shared by all Lookie models.
 # Model-specific values (body_axes, end effector) live in <model>.yaml, loaded after this file.
-# Unlisted parameters use the node defaults (lookie_control/docs/vr_teleop_dev_design.md §13).
+# Unlisted parameters use the node defaults (lookie_teleop/docs/vr_teleop_dev_design.md §13).
 /**/lookie_teleop:
   ros__parameters:
     xr_namespace: /xr_media
