@@ -77,5 +77,7 @@ The chassis node `/trio/driver/chassis/scout` subscribes to `cmd_vel` and publis
 | File in `lookie_bringup/config/<model>/` | Content |
 | --- | --- |
 | `driver_motors.yaml` | Head and torso motors |
-| `driver_ros.yaml` | Head, torso, arm and chassis node parameters (50 Hz) |
+| `driver_ros.yaml` | Head, torso, arm and chassis node parameters (joint feedback: 50 Hz) |
 | `driver_joint_bridge.yaml` | Namespace, topics, rate (50 Hz) and per-module joint mapping |
+
+Head, fold and arm diagnostics default to 30 Hz independently of the 50 Hz joint feedback configuration. This republishes cached status, not new hardware samples; chassis publication rates are unchanged.

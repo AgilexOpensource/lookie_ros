@@ -77,5 +77,7 @@ ros2 launch lookie_driver joint_bridge.launch.py bridge_config:=$CFG/driver_join
 | `lookie_bringup/config/<model>/` 中的文件 | 内容 |
 | --- | --- |
 | `driver_motors.yaml` | 头部和躯干电机 |
-| `driver_ros.yaml` | 头部、躯干、机械臂和底盘节点参数（50 Hz） |
+| `driver_ros.yaml` | 头部、躯干、机械臂和底盘节点参数（关节反馈：50 Hz） |
 | `driver_joint_bridge.yaml` | 命名空间、话题、频率（50 Hz）和各模组关节映射 |
+
+头部、折叠躯干和机械臂诊断默认按 30 Hz 发布，与 50 Hz 关节反馈配置独立。这里只重复发布缓存状态，不产生新的硬件采样；底盘发布频率保持不变。
