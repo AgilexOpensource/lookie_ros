@@ -8,10 +8,12 @@
 
 ## 系统软件包
 
+`agx_motor_sdk` 在 `pip install` 时会编译 C++ 扩展，所以要先装好编译工具：
+
 ```bash
 sudo apt update
-sudo apt install python3-vcstool python3-colcon-common-extensions python3-rosdep \
-  python3-venv python3-pip
+sudo apt install build-essential cmake libasio-dev libyaml-cpp-dev python3-dev \
+  python3-vcstool python3-colcon-common-extensions python3-rosdep python3-venv python3-pip
 ```
 
 每台机器初始化一次 rosdep。若 `/etc/ros/rosdep/sources.list.d` 已存在，跳过 `sudo rosdep init`：

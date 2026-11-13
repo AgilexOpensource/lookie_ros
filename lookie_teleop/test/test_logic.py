@@ -357,6 +357,31 @@ def test_catchup_converges_and_times_out():
     assert cu.step(np.zeros(3), Q0, goal, Q0, 0.02, 0.1, (1.0, 0))[2] == "手柄动作过快"
 
 
+def test_catchup_from_inside_inner_sphere_stays_rate_limited():
+    from types import SimpleNamespace
+    node = pytest.importorskip("lookie_teleop.node")
+    shoulder = np.array([0.0, 0.2005, 0.05])
+    arm = node.Arm(shoulder + [0.1, 0, 0], Q0.copy())
+    arm.mode, arm.catch = node.CATCHING, CatchUp(0.15, 0.8, 0.02, 0.09, 5.0, 0.8, 3.0)
+    arm.catch.start(0.0)
+    other = node.Arm(np.array([0.4, -0.2005, 0.05]), Q0.copy())
+    published = []
+    fake = SimpleNamespace(
+        waist=SimpleNamespace(frame=lambda: np.eye(4), pitch_rotation=np.eye(3)),
+        arms={"left": arm, "right": other}, fb={},
+        arm_map=SimpleNamespace(target=lambda *a: (shoulder + [0.2, 0, 0], np.eye(3))),
+        _controller=lambda s: None, err_monitor={"left": SimpleNamespace(reset=lambda: None)}, p={"v_max": 1.0, "w_max": 3.0}, ctrl_speed={"left": (0.0, 0.0)},
+        ws_cfg=WorkspaceConfig({"left": shoulder.tolist(), "right": [0, -0.2005, 0.05]}),
+        _disable=lambda reason: pytest.fail(reason), _publish_arms=lambda ft: published.append(arm.pos.copy()))
+    prev, t = arm.pos.copy(), 0.0
+    while arm.mode == node.CATCHING and t < 2.0:
+        t += 0.01
+        assert node.TeleopNode._arms(fake, t, 0.01, np.eye(4))
+        assert np.linalg.norm(published[-1] - prev) <= 0.15 * 0.01 + 1e-12
+        prev = published[-1]
+    assert arm.mode == node.ACTIVE
+
+
 # --- safety ----------------------------------------------------------------------------------
 
 def state(**mods):

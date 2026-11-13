@@ -8,10 +8,12 @@ Tested on Ubuntu 22.04 with ROS 2 Humble. Older releases are not supported; newe
 
 ## System packages
 
+`agx_motor_sdk` compiles a C++ extension during `pip install`, so the build tools come first:
+
 ```bash
 sudo apt update
-sudo apt install python3-vcstool python3-colcon-common-extensions python3-rosdep \
-  python3-venv python3-pip
+sudo apt install build-essential cmake libasio-dev libyaml-cpp-dev python3-dev \
+  python3-vcstool python3-colcon-common-extensions python3-rosdep python3-venv python3-pip
 ```
 
 Initialize rosdep once per machine. Skip `sudo rosdep init` if `/etc/ros/rosdep/sources.list.d` already exists:

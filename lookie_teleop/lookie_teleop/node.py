@@ -22,7 +22,7 @@ from std_srvs.srv import Trigger
 
 from . import calibration
 from .buttons import DoubleTapHold, Hysteresis, LongPress, ShortLongPress
-from .catchup import CatchUp, step_toward
+from .catchup import CatchUp, limit_step, step_toward
 from .frames import heading_frame, invert, matrix_to_pose, pitch_of, planar, pose_to_matrix, \
     rpy_to_matrix, rotation_angle, tcp_transform
 from .home import HomeTracker, parse_request_id
@@ -580,7 +580,7 @@ class TeleopNode(Node):
         self.arms[side] = arm
 
     def _arms(self, now, dt, fh) -> bool:
-        """Map, project, catch up / track, re-project and publish both arms (§8.1, §9).
+        """Map, project, catch up / track, re-project, rate-limit and publish both arms (§8.1, §9).
 
         Stopped arms hold their pose in F_t, so waist Z moves them with the torso while waist
         pitch (not part of F_t) leaves every arm target unchanged in the base frame.
@@ -604,9 +604,12 @@ class TeleopNode(Node):
         projected, clamped = project({s: g[0] for s, g in goals.items()}, self.ws_cfg,
                                      self.waist.pitch_rotation, fixed,
                                      {s: self.arms[s].goal_proj for s in goals})
+        starts, speeds = {}, {}
         for s, (_, rot) in goals.items():
             arm = self.arms[s]
             arm.goal_proj = projected[s]
+            starts[s] = arm.pos.copy()
+            speeds[s] = arm.catch.v if arm.mode == CATCHING else self.p["v_max"]
             gquat = matrix_to_quat(rot)
             if arm.mode == CATCHING:
                 arm.pos, arm.quat, status = arm.catch.step(arm.pos, arm.quat, projected[s], gquat, dt, now,
@@ -624,7 +627,8 @@ class TeleopNode(Node):
                                   self.waist.pitch_rotation, fixed)
         self.clamped = set(clamped) | set(clamped2)
         for s in goals:
-            self.arms[s].pos = final[s]
+            # Re-projection may push a point out of the inner sphere by more than one step.
+            self.arms[s].pos = limit_step(starts[s], final[s], speeds[s] * dt)
         self._publish_arms(ft)
         return True
 

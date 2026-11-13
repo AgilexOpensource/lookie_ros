@@ -11,7 +11,8 @@ MIN_UBUNTU=22.04
 TESTED="Ubuntu 22.04 with ROS 2 Humble"
 # ROS 2 releases older than Humble, the oldest supported one.
 OLD_DISTROS=(ardent bouncy crystal dashing eloquent foxy galactic)
-APT_PKGS=(python3-vcstool python3-colcon-common-extensions python3-rosdep python3-venv python3-pip)
+APT_PKGS=(build-essential cmake libasio-dev libyaml-cpp-dev python3-dev
+  python3-vcstool python3-colcon-common-extensions python3-rosdep python3-venv python3-pip)
 PIP_PKGS=(
   "git+https://github.com/agilexrobotics/pyAgxArm.git"
   "git+https://github.com/kehuanjack/agx_motor_sdk.git"

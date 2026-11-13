@@ -10,13 +10,17 @@ def quat_angle(q0: np.ndarray, q1: np.ndarray) -> float:
     return float(2.0 * np.arccos(min(1.0, dot)))
 
 
-def step_toward(pos, quat, goal_pos, goal_quat, v: float, w: float, dt: float):
-    """Advance (pos, quat) toward the goal by at most ``v * dt`` metres and ``w * dt`` radians."""
+def limit_step(pos, goal_pos, step: float):
+    """Move ``pos`` toward ``goal_pos`` by at most ``step`` metres."""
     pos, goal_pos = np.asarray(pos, dtype=float), np.asarray(goal_pos, dtype=float)
     delta = goal_pos - pos
     dist = np.linalg.norm(delta)
-    step = v * dt
-    new_pos = goal_pos.copy() if dist <= step else pos + delta * (step / dist)
+    return goal_pos.copy() if dist <= step else pos + delta * (step / dist)
+
+
+def step_toward(pos, quat, goal_pos, goal_quat, v: float, w: float, dt: float):
+    """Advance (pos, quat) toward the goal by at most ``v * dt`` metres and ``w * dt`` radians."""
+    new_pos = limit_step(pos, goal_pos, v * dt)
     angle = quat_angle(quat, goal_quat)
     max_angle = w * dt
     new_quat = np.asarray(goal_quat, dtype=float) if angle <= max_angle else slerp(quat, goal_quat, max_angle / angle)
