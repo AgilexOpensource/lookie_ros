@@ -1,0 +1,6 @@
+# Dependencies of lookie_teleop; entries must match ../lookie.repos.
+repositories:
+  xr_media_ros:
+    type: git
+    url: https://github.com/AgilexOpensource/xr_media_ros.git
+    version: main

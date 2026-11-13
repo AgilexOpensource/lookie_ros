@@ -6,13 +6,20 @@ from typing import Callable
 
 import yaml
 
+from lookie_driver.layout import validate_namespace
+
 PACKAGE_SCHEME = 'package://'
+BRINGUP_FILE = 'bringup.yaml'
+DESCRIPTION_KEYS = ('urdf', 'collision_urdf', 'initial')
 DRIVER_KEYS = ('robot_yaml', 'params_file', 'bridge_config')
+MODEL_ENV = 'LOOKIE_MODEL'
 
 
 @dataclass(frozen=True)
 class BringupConfig:
-    model: str
+    namespace: str
+    urdf: Path
+    collision_urdf: Path
     initial: Path
     robot_yaml: Path
     params_file: Path
@@ -32,8 +39,8 @@ def _load_mapping(path) -> dict:
     return data
 
 
-def resolve_path(value: str, share_lookup: Callable[[str], str]) -> Path:
-    """Resolve ``package://<pkg>/<relative>`` or an absolute path to an existing file."""
+def resolve_path(value: str, share_lookup: Callable[[str], str], base=None) -> Path:
+    """Resolve ``package://<pkg>/<relative>``, an absolute path, or a path relative to ``base``."""
     value = str(value).strip()
     if value.startswith(PACKAGE_SCHEME):
         package, _, relative = value[len(PACKAGE_SCHEME):].partition('/')
@@ -44,59 +51,74 @@ def resolve_path(value: str, share_lookup: Callable[[str], str]) -> Path:
     else:
         path = Path(value)
         if not path.is_absolute():
-            raise ValueError(f'path must be absolute or package://, got {value!r}')
+            if base is None or not value:
+                raise ValueError(f'path must be absolute or package://, got {value!r}')
+            path = Path(base) / path
     if not path.is_file():
         raise FileNotFoundError(f'file not found: {path}')
     return path
 
 
+def available_models(config_dir) -> list:
+    """Model names: subdirectories of ``config_dir`` that contain a bringup.yaml."""
+    config_dir = Path(config_dir)
+    if not config_dir.is_dir():
+        return []
+    return sorted(p.name for p in config_dir.iterdir() if (p / BRINGUP_FILE).is_file())
+
+
 def load_bringup_config(path, share_lookup: Callable[[str], str]) -> BringupConfig:
     data = _load_mapping(path)
-    description = data.get('description') or {}
-    driver = data.get('driver') or {}
-    missing = [f'driver.{k}' for k in DRIVER_KEYS if k not in driver]
-    if 'initial' not in description:
-        missing.append('description.initial')
-    if 'model' not in data:
-        missing.append('model')
+    base = Path(path).parent
+    sections = {'description': DESCRIPTION_KEYS, 'driver': DRIVER_KEYS}
+    missing = [] if data.get('namespace') else ['namespace']
+    missing += [f'{s}.{k}' for s, keys in sections.items() for k in keys
+                if k not in (data.get(s) or {})]
     if missing:
         raise ValueError(f'{path}: missing keys {missing}')
     return BringupConfig(
-        model=str(data['model']),
-        initial=resolve_path(description['initial'], share_lookup),
-        **{k: resolve_path(driver[k], share_lookup) for k in DRIVER_KEYS},
+        namespace=validate_namespace(data['namespace']),
+        **{k: resolve_path(data[s][k], share_lookup, base)
+           for s, keys in sections.items() for k in keys},
     )
 
 
 def select_bringup_config(model: str, value: str, share_lookup: Callable[[str], str]):
-    """Return ``(path, config)``; empty ``value`` selects lookie_bringup ``config/<model>.yaml``."""
+    """Return ``(path, config)``; empty ``value`` selects lookie_bringup ``config/<model>/bringup.yaml``."""
     value = value.strip()
-    path = Path(value) if value else Path(share_lookup('lookie_bringup')) / 'config' / f'{model}.yaml'
-    if not path.is_absolute():
-        raise ValueError(f'config must be an absolute path, got {value!r}')
-    cfg = load_bringup_config(path, share_lookup)
-    if cfg.model != model:
-        raise ValueError(f'{path}: model {cfg.model!r} != launch model {model!r}')
-    return path, cfg
+    if value:
+        path = Path(value)
+        if not path.is_absolute():
+            raise ValueError(f'config must be an absolute path, got {value!r}')
+    else:
+        config_dir = Path(share_lookup('lookie_bringup')) / 'config'
+        models = available_models(config_dir)
+        if not model:
+            raise ValueError(f'{MODEL_ENV} is not set; export {MODEL_ENV}=<model> or pass '
+                             f'model:=<model>. Available models: {models}')
+        if model not in models:
+            raise ValueError(f'unknown model {model!r}; available models in {config_dir}: {models}')
+        path = config_dir / model / BRINGUP_FILE
+    return path, load_bringup_config(path, share_lookup)
 
 
 @dataclass(frozen=True)
 class TeleopConfig:
     xr_media: Path
-    wbc: tuple  # parameter files in load order
+    lookie_teleop: tuple  # parameter files in load order
 
 
 def load_teleop_config(path, share_lookup: Callable[[str], str]) -> TeleopConfig:
     teleop = _load_mapping(path).get('teleop') or {}
-    wbc = teleop.get('wbc')
-    if isinstance(wbc, str):
-        wbc = [wbc]
-    missing = [f'teleop.{k}' for k, v in (('xr_media', teleop.get('xr_media')), ('wbc', wbc)) if not v]
+    files = teleop.get('lookie_teleop')
+    if isinstance(files, str):
+        files = [files]
+    missing = [f'teleop.{k}' for k, v in (('xr_media', teleop.get('xr_media')), ('lookie_teleop', files)) if not v]
     if missing:
         raise ValueError(f'{path}: missing keys {missing}')
     return TeleopConfig(
-        xr_media=resolve_path(teleop['xr_media'], share_lookup),
-        wbc=tuple(resolve_path(p, share_lookup) for p in wbc),
+        xr_media=resolve_path(teleop['xr_media'], share_lookup, Path(path).parent),
+        lookie_teleop=tuple(resolve_path(p, share_lookup, Path(path).parent) for p in files),
     )
 
 
@@ -105,7 +127,7 @@ def load_kstone_config(path, share_lookup: Callable[[str], str]) -> Path:
     value = (_load_mapping(path).get('kstone') or {}).get('config')
     if not value:
         raise ValueError(f'{path}: missing keys [\'kstone.config\']')
-    return resolve_path(value, share_lookup)
+    return resolve_path(value, share_lookup, Path(path).parent)
 
 
 def load_bridge_topics(bridge_config) -> BridgeTopics:

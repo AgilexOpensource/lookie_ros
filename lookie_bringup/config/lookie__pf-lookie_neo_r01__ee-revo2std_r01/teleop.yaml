@@ -1,0 +1,12 @@
+# lookie_teleop overrides for lookie__pf-lookie_neo_r01__ee-revo2std_r01 (loaded after common.yaml).
+# differential chassis: headset drives waist pitch only; chassis is stick-only (vx, wz).
+/**/lookie_teleop:
+  ros__parameters:
+    body_axes: [waist_pitch]
+
+    # Revo2 dexterous hands: main trigger 0 -> ee_open, 1 -> ee_close (linear).
+    # Joint names and limits come from kstone discover unless ee_joints_* / ee_lower / ee_upper are set.
+    ee_modules: [left_hand_joint, right_hand_joint]
+    trigger_deadzone: 0.05
+    ee_open: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    ee_close: [1.57, 1.03, 1.41, 1.41, 1.41, 1.41]

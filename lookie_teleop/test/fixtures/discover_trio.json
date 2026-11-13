@@ -1,0 +1,1364 @@
+{
+ "base_frame": "base_link",
+ "interfaces": [
+  {
+   "depth": 5.0,
+   "direction": "subscribe",
+   "durability": "volatile",
+   "reliability": "best_effort",
+   "topic": "/kstone/joint_states",
+   "type": "sensor_msgs/msg/JointState"
+  },
+  {
+   "depth": 5.0,
+   "direction": "subscribe",
+   "durability": "volatile",
+   "reliability": "best_effort",
+   "topic": "/kstone/odom",
+   "type": "nav_msgs/msg/Odometry"
+  },
+  {
+   "depth": 10.0,
+   "direction": "publish",
+   "durability": "volatile",
+   "reliability": "reliable",
+   "topic": "/kstone/feedback/joint_states",
+   "type": "sensor_msgs/msg/JointState"
+  },
+  {
+   "depth": 10.0,
+   "direction": "publish",
+   "durability": "volatile",
+   "frame": "chassis_base_link",
+   "reliability": "reliable",
+   "topic": "/kstone/feedback/cmd_vel",
+   "type": "geometry_msgs/msg/Twist"
+  },
+  {
+   "depth": 1.0,
+   "direction": "publish",
+   "durability": "transient_local",
+   "reliability": "reliable",
+   "topic": "/kstone/state",
+   "type": "std_msgs/msg/String"
+  },
+  {
+   "depth": 1.0,
+   "direction": "publish",
+   "durability": "transient_local",
+   "reliability": "reliable",
+   "topic": "/kstone/discover",
+   "type": "std_msgs/msg/String"
+  },
+  {
+   "depth": 10.0,
+   "direction": "subscribe",
+   "durability": "volatile",
+   "module_routes": [
+    {
+     "joint_names": [
+      "torso_joint1",
+      "torso_joint2",
+      "torso_joint3",
+      "torso_joint4"
+     ],
+     "module": "torso_joint",
+     "port": "target"
+    },
+    {
+     "joint_names": [
+      "l_arm_joint1",
+      "l_arm_joint2",
+      "l_arm_joint3",
+      "l_arm_joint4",
+      "l_arm_joint5",
+      "l_arm_joint6",
+      "l_arm_joint7"
+     ],
+     "module": "left_arm_joint",
+     "port": "target"
+    },
+    {
+     "joint_names": [
+      "r_arm_joint1",
+      "r_arm_joint2",
+      "r_arm_joint3",
+      "r_arm_joint4",
+      "r_arm_joint5",
+      "r_arm_joint6",
+      "r_arm_joint7"
+     ],
+     "module": "right_arm_joint",
+     "port": "target"
+    },
+    {
+     "joint_names": [
+      "left_thumb_metacarpal_joint",
+      "left_thumb_proximal_joint",
+      "left_index_proximal_joint",
+      "left_middle_proximal_joint",
+      "left_ring_proximal_joint",
+      "left_pinky_proximal_joint"
+     ],
+     "module": "left_hand_joint",
+     "port": "target"
+    },
+    {
+     "joint_names": [
+      "right_thumb_metacarpal_joint",
+      "right_thumb_proximal_joint",
+      "right_index_proximal_joint",
+      "right_middle_proximal_joint",
+      "right_ring_proximal_joint",
+      "right_pinky_proximal_joint"
+     ],
+     "module": "right_hand_joint",
+     "port": "target"
+    },
+    {
+     "joint_names": [
+      "head_joint1",
+      "head_joint2"
+     ],
+     "module": "head_joint",
+     "port": "target"
+    }
+   ],
+   "reliability": "reliable",
+   "routing": "by_joint_name",
+   "semantics": "target",
+   "topic": "/kstone/control/joint",
+   "type": "sensor_msgs/msg/JointState"
+  },
+  {
+   "depth": 10.0,
+   "direction": "publish",
+   "durability": "volatile",
+   "reliability": "reliable",
+   "topic": "/kstone/chassis/feedback/pose",
+   "type": "geometry_msgs/msg/PoseStamped"
+  },
+  {
+   "depth": 10.0,
+   "direction": "publish",
+   "durability": "volatile",
+   "reliability": "reliable",
+   "topic": "/kstone/torso_pose/feedback/pose",
+   "type": "geometry_msgs/msg/PoseStamped"
+  },
+  {
+   "depth": 10.0,
+   "direction": "publish",
+   "durability": "volatile",
+   "reliability": "reliable",
+   "topic": "/kstone/left_arm_pose/feedback/pose",
+   "type": "geometry_msgs/msg/PoseStamped"
+  },
+  {
+   "depth": 10.0,
+   "direction": "publish",
+   "durability": "volatile",
+   "reliability": "reliable",
+   "topic": "/kstone/right_arm_pose/feedback/pose",
+   "type": "geometry_msgs/msg/PoseStamped"
+  },
+  {
+   "depth": 10.0,
+   "direction": "subscribe",
+   "durability": "volatile",
+   "reliability": "reliable",
+   "topic": "/kstone/chassis/control/pose",
+   "type": "geometry_msgs/msg/PoseStamped"
+  },
+  {
+   "depth": 10.0,
+   "direction": "subscribe",
+   "durability": "volatile",
+   "reliability": "reliable",
+   "topic": "/kstone/torso_pose/control/pose",
+   "type": "geometry_msgs/msg/PoseStamped"
+  },
+  {
+   "depth": 10.0,
+   "direction": "subscribe",
+   "durability": "volatile",
+   "reliability": "reliable",
+   "topic": "/kstone/left_arm_pose/control/pose",
+   "type": "geometry_msgs/msg/PoseStamped"
+  },
+  {
+   "depth": 10.0,
+   "direction": "subscribe",
+   "durability": "volatile",
+   "reliability": "reliable",
+   "topic": "/kstone/right_arm_pose/control/pose",
+   "type": "geometry_msgs/msg/PoseStamped"
+  },
+  {
+   "depth": 10.0,
+   "direction": "subscribe",
+   "durability": "volatile",
+   "frame": "chassis_base_link",
+   "reliability": "reliable",
+   "topic": "/kstone/chassis/control/cmd_vel",
+   "type": "geometry_msgs/msg/Twist"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/home",
+   "type": "std_srvs/srv/Trigger"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/chassis/enable",
+   "type": "std_srvs/srv/SetBool"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/torso_pose/enable",
+   "type": "std_srvs/srv/SetBool"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/left_arm_pose/enable",
+   "type": "std_srvs/srv/SetBool"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/right_arm_pose/enable",
+   "type": "std_srvs/srv/SetBool"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/torso_joint/enable",
+   "type": "std_srvs/srv/SetBool"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/left_arm_joint/enable",
+   "type": "std_srvs/srv/SetBool"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/right_arm_joint/enable",
+   "type": "std_srvs/srv/SetBool"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/left_hand_joint/enable",
+   "type": "std_srvs/srv/SetBool"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/right_hand_joint/enable",
+   "type": "std_srvs/srv/SetBool"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/head_joint/enable",
+   "type": "std_srvs/srv/SetBool"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/torso_pose/home",
+   "type": "std_srvs/srv/Trigger"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/left_arm_pose/home",
+   "type": "std_srvs/srv/Trigger"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/right_arm_pose/home",
+   "type": "std_srvs/srv/Trigger"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/torso_joint/home",
+   "type": "std_srvs/srv/Trigger"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/left_arm_joint/home",
+   "type": "std_srvs/srv/Trigger"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/right_arm_joint/home",
+   "type": "std_srvs/srv/Trigger"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/left_hand_joint/home",
+   "type": "std_srvs/srv/Trigger"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/right_hand_joint/home",
+   "type": "std_srvs/srv/Trigger"
+  },
+  {
+   "direction": "service",
+   "qos": "services_default",
+   "service": "/kstone/head_joint/home",
+   "type": "std_srvs/srv/Trigger"
+  }
+ ],
+ "modules": [
+  {
+   "chassis_frame": "chassis_base_link",
+   "chassis_kinematics": "omni",
+   "homeable": false,
+   "id": "chassis",
+   "ports": [
+    {
+     "control_topic": "/kstone/chassis/control/cmd_vel",
+     "control_type": "geometry_msgs/msg/Twist",
+     "labels": [
+      "vx",
+      "vy",
+      "wz"
+     ],
+     "lower": [
+      -0.5,
+      -0.5,
+      -1.0
+     ],
+     "name": "velocity",
+     "ros_exposed": true,
+     "ros_frame": "chassis_base_link",
+     "timeout": 0.25,
+     "type": "vector",
+     "upper": [
+      0.5,
+      0.5,
+      1.0
+     ]
+    },
+    {
+     "control_topic": "/kstone/chassis/control/pose",
+     "control_type": "geometry_msgs/msg/PoseStamped",
+     "labels": [
+      "x",
+      "y",
+      "yaw"
+     ],
+     "lower": [
+      null,
+      null,
+      null
+     ],
+     "name": "pose_target",
+     "ros_exposed": true,
+     "ros_frame": "world",
+     "timeout": 0.25,
+     "type": "vector",
+     "upper": [
+      null,
+      null,
+      null
+     ]
+    }
+   ],
+   "ros_interfaces": [
+    {
+     "depth": 10.0,
+     "direction": "publish",
+     "durability": "volatile",
+     "frame": "world",
+     "reliability": "reliable",
+     "semantics": "feedback",
+     "source": "odometry",
+     "topic": "/kstone/chassis/feedback/pose",
+     "type": "geometry_msgs/msg/PoseStamped"
+    },
+    {
+     "depth": 10.0,
+     "direction": "subscribe",
+     "durability": "volatile",
+     "frame": "world",
+     "port": "pose_target",
+     "reliability": "reliable",
+     "semantics": "target",
+     "source": "command",
+     "topic": "/kstone/chassis/control/pose",
+     "type": "geometry_msgs/msg/PoseStamped"
+    },
+    {
+     "depth": 10.0,
+     "direction": "subscribe",
+     "durability": "volatile",
+     "frame": "chassis_base_link",
+     "port": "velocity",
+     "reliability": "reliable",
+     "semantics": "target",
+     "source": "command",
+     "topic": "/kstone/chassis/control/cmd_vel",
+     "type": "geometry_msgs/msg/Twist"
+    }
+   ],
+   "ros_topics_supported": true,
+   "type": "chassis"
+  },
+  {
+   "homeable": true,
+   "id": "torso_pose",
+   "ports": [
+    {
+     "control_topic": "/kstone/torso_pose/control/pose",
+     "control_type": "geometry_msgs/msg/PoseStamped",
+     "frame": "chest_link",
+     "home_frame": "chassis_base_link",
+     "home_pose": {
+      "orientation": [
+       1.0000000000000002,
+       -2.1614711122138289e-16,
+       -1.9428902930940232e-16,
+       -2.1719698728234663e-16
+      ],
+      "position": [
+       0.00011327821187588058,
+       2.3235947303212567e-16,
+       1.000066383340451
+      ]
+     },
+     "name": "target",
+     "reference": "chassis_base_link",
+     "ros_exposed": true,
+     "ros_frame": "chassis_base_link",
+     "type": "pose"
+    }
+   ],
+   "ros_interfaces": [
+    {
+     "depth": 10.0,
+     "direction": "publish",
+     "durability": "volatile",
+     "frame": "chassis_base_link",
+     "reliability": "reliable",
+     "semantics": "feedback",
+     "source": "fk",
+     "topic": "/kstone/torso_pose/feedback/pose",
+     "type": "geometry_msgs/msg/PoseStamped"
+    },
+    {
+     "depth": 10.0,
+     "direction": "subscribe",
+     "durability": "volatile",
+     "frame": "chassis_base_link",
+     "port": "target",
+     "reliability": "reliable",
+     "semantics": "target",
+     "source": "command",
+     "topic": "/kstone/torso_pose/control/pose",
+     "type": "geometry_msgs/msg/PoseStamped"
+    }
+   ],
+   "ros_topics_supported": true,
+   "type": "frame_target"
+  },
+  {
+   "homeable": true,
+   "id": "left_arm_pose",
+   "ports": [
+    {
+     "control_topic": "/kstone/left_arm_pose/control/pose",
+     "control_type": "geometry_msgs/msg/PoseStamped",
+     "frame": "left_base_link",
+     "home_frame": "chassis_base_link",
+     "home_pose": {
+      "orientation": [
+       0.4996018367708782,
+       -0.5000001585340331,
+       0.5003981632291216,
+       -0.49999952439780265
+      ],
+      "position": [
+       0.3396230629162846,
+       0.20047671586580362,
+       0.7397959055402206
+      ]
+     },
+     "name": "target",
+     "reference": "chassis_base_link",
+     "ros_exposed": true,
+     "ros_frame": "chassis_base_link",
+     "type": "pose"
+    }
+   ],
+   "ros_interfaces": [
+    {
+     "depth": 10.0,
+     "direction": "publish",
+     "durability": "volatile",
+     "frame": "chassis_base_link",
+     "reliability": "reliable",
+     "semantics": "feedback",
+     "source": "fk",
+     "topic": "/kstone/left_arm_pose/feedback/pose",
+     "type": "geometry_msgs/msg/PoseStamped"
+    },
+    {
+     "depth": 10.0,
+     "direction": "subscribe",
+     "durability": "volatile",
+     "frame": "chassis_base_link",
+     "port": "target",
+     "reliability": "reliable",
+     "semantics": "target",
+     "source": "command",
+     "topic": "/kstone/left_arm_pose/control/pose",
+     "type": "geometry_msgs/msg/PoseStamped"
+    }
+   ],
+   "ros_topics_supported": true,
+   "type": "frame_target"
+  },
+  {
+   "homeable": true,
+   "id": "right_arm_pose",
+   "ports": [
+    {
+     "control_topic": "/kstone/right_arm_pose/control/pose",
+     "control_type": "geometry_msgs/msg/PoseStamped",
+     "frame": "right_base_link",
+     "home_frame": "chassis_base_link",
+     "home_pose": {
+      "orientation": [
+       0.4996018367708791,
+       0.5000001585340323,
+       0.5003981632291217,
+       0.49999952439780243
+      ],
+      "position": [
+       0.3396230629162844,
+       -0.20047671586580343,
+       0.7397959055402209
+      ]
+     },
+     "name": "target",
+     "reference": "chassis_base_link",
+     "ros_exposed": true,
+     "ros_frame": "chassis_base_link",
+     "type": "pose"
+    }
+   ],
+   "ros_interfaces": [
+    {
+     "depth": 10.0,
+     "direction": "publish",
+     "durability": "volatile",
+     "frame": "chassis_base_link",
+     "reliability": "reliable",
+     "semantics": "feedback",
+     "source": "fk",
+     "topic": "/kstone/right_arm_pose/feedback/pose",
+     "type": "geometry_msgs/msg/PoseStamped"
+    },
+    {
+     "depth": 10.0,
+     "direction": "subscribe",
+     "durability": "volatile",
+     "frame": "chassis_base_link",
+     "port": "target",
+     "reliability": "reliable",
+     "semantics": "target",
+     "source": "command",
+     "topic": "/kstone/right_arm_pose/control/pose",
+     "type": "geometry_msgs/msg/PoseStamped"
+    }
+   ],
+   "ros_topics_supported": true,
+   "type": "frame_target"
+  },
+  {
+   "homeable": false,
+   "id": "left_arm_null",
+   "ports": [],
+   "ros_interfaces": [],
+   "ros_topics_supported": false,
+   "type": "null_space"
+  },
+  {
+   "homeable": false,
+   "id": "right_arm_null",
+   "ports": [],
+   "ros_interfaces": [],
+   "ros_topics_supported": false,
+   "type": "null_space"
+  },
+  {
+   "homeable": true,
+   "id": "torso_joint",
+   "ports": [
+    {
+     "control_topic": "/kstone/control/joint",
+     "control_type": "sensor_msgs/msg/JointState",
+     "labels": [
+      "torso_joint1",
+      "torso_joint2",
+      "torso_joint3",
+      "torso_joint4"
+     ],
+     "lower": [
+      -1.5,
+      0.2618,
+      -1.5,
+      -1.5707963267948966
+     ],
+     "name": "target",
+     "ros_exposed": true,
+     "type": "vector",
+     "upper": [
+      1.3962634015954636,
+      2.75,
+      1.75,
+      1.5707963267948966
+     ]
+    }
+   ],
+   "ros_interfaces": [
+    {
+     "depth": 10.0,
+     "direction": "subscribe",
+     "durability": "volatile",
+     "module_routes": [
+      {
+       "joint_names": [
+        "torso_joint1",
+        "torso_joint2",
+        "torso_joint3",
+        "torso_joint4"
+       ],
+       "module": "torso_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "l_arm_joint1",
+        "l_arm_joint2",
+        "l_arm_joint3",
+        "l_arm_joint4",
+        "l_arm_joint5",
+        "l_arm_joint6",
+        "l_arm_joint7"
+       ],
+       "module": "left_arm_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "r_arm_joint1",
+        "r_arm_joint2",
+        "r_arm_joint3",
+        "r_arm_joint4",
+        "r_arm_joint5",
+        "r_arm_joint6",
+        "r_arm_joint7"
+       ],
+       "module": "right_arm_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "left_thumb_metacarpal_joint",
+        "left_thumb_proximal_joint",
+        "left_index_proximal_joint",
+        "left_middle_proximal_joint",
+        "left_ring_proximal_joint",
+        "left_pinky_proximal_joint"
+       ],
+       "module": "left_hand_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "right_thumb_metacarpal_joint",
+        "right_thumb_proximal_joint",
+        "right_index_proximal_joint",
+        "right_middle_proximal_joint",
+        "right_ring_proximal_joint",
+        "right_pinky_proximal_joint"
+       ],
+       "module": "right_hand_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "head_joint1",
+        "head_joint2"
+       ],
+       "module": "head_joint",
+       "port": "target"
+      }
+     ],
+     "port": "target",
+     "reliability": "reliable",
+     "routing": "by_joint_name",
+     "semantics": "target",
+     "source": "command",
+     "topic": "/kstone/control/joint",
+     "type": "sensor_msgs/msg/JointState"
+    }
+   ],
+   "ros_topics_supported": true,
+   "type": "joint_target"
+  },
+  {
+   "homeable": true,
+   "id": "left_arm_joint",
+   "ports": [
+    {
+     "control_topic": "/kstone/control/joint",
+     "control_type": "sensor_msgs/msg/JointState",
+     "labels": [
+      "l_arm_joint1",
+      "l_arm_joint2",
+      "l_arm_joint3",
+      "l_arm_joint4",
+      "l_arm_joint5",
+      "l_arm_joint6",
+      "l_arm_joint7"
+     ],
+     "lower": [
+      -2.007,
+      0.26,
+      -2.09,
+      0.0873,
+      -2.75,
+      -0.73,
+      -1.5707963
+     ],
+     "name": "target",
+     "ros_exposed": true,
+     "type": "vector",
+     "upper": [
+      0.921,
+      1.74,
+      0.649,
+      2.14,
+      2.75,
+      0.95,
+      1.5707963
+     ]
+    }
+   ],
+   "ros_interfaces": [
+    {
+     "depth": 10.0,
+     "direction": "subscribe",
+     "durability": "volatile",
+     "module_routes": [
+      {
+       "joint_names": [
+        "torso_joint1",
+        "torso_joint2",
+        "torso_joint3",
+        "torso_joint4"
+       ],
+       "module": "torso_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "l_arm_joint1",
+        "l_arm_joint2",
+        "l_arm_joint3",
+        "l_arm_joint4",
+        "l_arm_joint5",
+        "l_arm_joint6",
+        "l_arm_joint7"
+       ],
+       "module": "left_arm_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "r_arm_joint1",
+        "r_arm_joint2",
+        "r_arm_joint3",
+        "r_arm_joint4",
+        "r_arm_joint5",
+        "r_arm_joint6",
+        "r_arm_joint7"
+       ],
+       "module": "right_arm_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "left_thumb_metacarpal_joint",
+        "left_thumb_proximal_joint",
+        "left_index_proximal_joint",
+        "left_middle_proximal_joint",
+        "left_ring_proximal_joint",
+        "left_pinky_proximal_joint"
+       ],
+       "module": "left_hand_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "right_thumb_metacarpal_joint",
+        "right_thumb_proximal_joint",
+        "right_index_proximal_joint",
+        "right_middle_proximal_joint",
+        "right_ring_proximal_joint",
+        "right_pinky_proximal_joint"
+       ],
+       "module": "right_hand_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "head_joint1",
+        "head_joint2"
+       ],
+       "module": "head_joint",
+       "port": "target"
+      }
+     ],
+     "port": "target",
+     "reliability": "reliable",
+     "routing": "by_joint_name",
+     "semantics": "target",
+     "source": "command",
+     "topic": "/kstone/control/joint",
+     "type": "sensor_msgs/msg/JointState"
+    }
+   ],
+   "ros_topics_supported": true,
+   "type": "joint_target"
+  },
+  {
+   "homeable": true,
+   "id": "right_arm_joint",
+   "ports": [
+    {
+     "control_topic": "/kstone/control/joint",
+     "control_type": "sensor_msgs/msg/JointState",
+     "labels": [
+      "r_arm_joint1",
+      "r_arm_joint2",
+      "r_arm_joint3",
+      "r_arm_joint4",
+      "r_arm_joint5",
+      "r_arm_joint6",
+      "r_arm_joint7"
+     ],
+     "lower": [
+      -0.921,
+      0.26,
+      -0.649,
+      0.0873,
+      -2.75,
+      -0.73,
+      -1.5707963
+     ],
+     "name": "target",
+     "ros_exposed": true,
+     "type": "vector",
+     "upper": [
+      2.007,
+      1.74,
+      2.09,
+      2.14,
+      2.75,
+      0.95,
+      1.5707963
+     ]
+    }
+   ],
+   "ros_interfaces": [
+    {
+     "depth": 10.0,
+     "direction": "subscribe",
+     "durability": "volatile",
+     "module_routes": [
+      {
+       "joint_names": [
+        "torso_joint1",
+        "torso_joint2",
+        "torso_joint3",
+        "torso_joint4"
+       ],
+       "module": "torso_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "l_arm_joint1",
+        "l_arm_joint2",
+        "l_arm_joint3",
+        "l_arm_joint4",
+        "l_arm_joint5",
+        "l_arm_joint6",
+        "l_arm_joint7"
+       ],
+       "module": "left_arm_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "r_arm_joint1",
+        "r_arm_joint2",
+        "r_arm_joint3",
+        "r_arm_joint4",
+        "r_arm_joint5",
+        "r_arm_joint6",
+        "r_arm_joint7"
+       ],
+       "module": "right_arm_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "left_thumb_metacarpal_joint",
+        "left_thumb_proximal_joint",
+        "left_index_proximal_joint",
+        "left_middle_proximal_joint",
+        "left_ring_proximal_joint",
+        "left_pinky_proximal_joint"
+       ],
+       "module": "left_hand_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "right_thumb_metacarpal_joint",
+        "right_thumb_proximal_joint",
+        "right_index_proximal_joint",
+        "right_middle_proximal_joint",
+        "right_ring_proximal_joint",
+        "right_pinky_proximal_joint"
+       ],
+       "module": "right_hand_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "head_joint1",
+        "head_joint2"
+       ],
+       "module": "head_joint",
+       "port": "target"
+      }
+     ],
+     "port": "target",
+     "reliability": "reliable",
+     "routing": "by_joint_name",
+     "semantics": "target",
+     "source": "command",
+     "topic": "/kstone/control/joint",
+     "type": "sensor_msgs/msg/JointState"
+    }
+   ],
+   "ros_topics_supported": true,
+   "type": "joint_target"
+  },
+  {
+   "homeable": true,
+   "id": "left_hand_joint",
+   "ports": [
+    {
+     "control_topic": "/kstone/control/joint",
+     "control_type": "sensor_msgs/msg/JointState",
+     "labels": [
+      "left_thumb_metacarpal_joint",
+      "left_thumb_proximal_joint",
+      "left_index_proximal_joint",
+      "left_middle_proximal_joint",
+      "left_ring_proximal_joint",
+      "left_pinky_proximal_joint"
+     ],
+     "lower": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "name": "target",
+     "ros_exposed": true,
+     "type": "vector",
+     "upper": [
+      1.57,
+      1.03,
+      1.41,
+      1.41,
+      1.41,
+      1.41
+     ]
+    }
+   ],
+   "ros_interfaces": [
+    {
+     "depth": 10.0,
+     "direction": "subscribe",
+     "durability": "volatile",
+     "module_routes": [
+      {
+       "joint_names": [
+        "torso_joint1",
+        "torso_joint2",
+        "torso_joint3",
+        "torso_joint4"
+       ],
+       "module": "torso_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "l_arm_joint1",
+        "l_arm_joint2",
+        "l_arm_joint3",
+        "l_arm_joint4",
+        "l_arm_joint5",
+        "l_arm_joint6",
+        "l_arm_joint7"
+       ],
+       "module": "left_arm_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "r_arm_joint1",
+        "r_arm_joint2",
+        "r_arm_joint3",
+        "r_arm_joint4",
+        "r_arm_joint5",
+        "r_arm_joint6",
+        "r_arm_joint7"
+       ],
+       "module": "right_arm_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "left_thumb_metacarpal_joint",
+        "left_thumb_proximal_joint",
+        "left_index_proximal_joint",
+        "left_middle_proximal_joint",
+        "left_ring_proximal_joint",
+        "left_pinky_proximal_joint"
+       ],
+       "module": "left_hand_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "right_thumb_metacarpal_joint",
+        "right_thumb_proximal_joint",
+        "right_index_proximal_joint",
+        "right_middle_proximal_joint",
+        "right_ring_proximal_joint",
+        "right_pinky_proximal_joint"
+       ],
+       "module": "right_hand_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "head_joint1",
+        "head_joint2"
+       ],
+       "module": "head_joint",
+       "port": "target"
+      }
+     ],
+     "port": "target",
+     "reliability": "reliable",
+     "routing": "by_joint_name",
+     "semantics": "target",
+     "source": "command",
+     "topic": "/kstone/control/joint",
+     "type": "sensor_msgs/msg/JointState"
+    }
+   ],
+   "ros_topics_supported": true,
+   "type": "joint_target"
+  },
+  {
+   "homeable": true,
+   "id": "right_hand_joint",
+   "ports": [
+    {
+     "control_topic": "/kstone/control/joint",
+     "control_type": "sensor_msgs/msg/JointState",
+     "labels": [
+      "right_thumb_metacarpal_joint",
+      "right_thumb_proximal_joint",
+      "right_index_proximal_joint",
+      "right_middle_proximal_joint",
+      "right_ring_proximal_joint",
+      "right_pinky_proximal_joint"
+     ],
+     "lower": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "name": "target",
+     "ros_exposed": true,
+     "type": "vector",
+     "upper": [
+      1.57,
+      1.03,
+      1.41,
+      1.41,
+      1.41,
+      1.41
+     ]
+    }
+   ],
+   "ros_interfaces": [
+    {
+     "depth": 10.0,
+     "direction": "subscribe",
+     "durability": "volatile",
+     "module_routes": [
+      {
+       "joint_names": [
+        "torso_joint1",
+        "torso_joint2",
+        "torso_joint3",
+        "torso_joint4"
+       ],
+       "module": "torso_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "l_arm_joint1",
+        "l_arm_joint2",
+        "l_arm_joint3",
+        "l_arm_joint4",
+        "l_arm_joint5",
+        "l_arm_joint6",
+        "l_arm_joint7"
+       ],
+       "module": "left_arm_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "r_arm_joint1",
+        "r_arm_joint2",
+        "r_arm_joint3",
+        "r_arm_joint4",
+        "r_arm_joint5",
+        "r_arm_joint6",
+        "r_arm_joint7"
+       ],
+       "module": "right_arm_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "left_thumb_metacarpal_joint",
+        "left_thumb_proximal_joint",
+        "left_index_proximal_joint",
+        "left_middle_proximal_joint",
+        "left_ring_proximal_joint",
+        "left_pinky_proximal_joint"
+       ],
+       "module": "left_hand_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "right_thumb_metacarpal_joint",
+        "right_thumb_proximal_joint",
+        "right_index_proximal_joint",
+        "right_middle_proximal_joint",
+        "right_ring_proximal_joint",
+        "right_pinky_proximal_joint"
+       ],
+       "module": "right_hand_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "head_joint1",
+        "head_joint2"
+       ],
+       "module": "head_joint",
+       "port": "target"
+      }
+     ],
+     "port": "target",
+     "reliability": "reliable",
+     "routing": "by_joint_name",
+     "semantics": "target",
+     "source": "command",
+     "topic": "/kstone/control/joint",
+     "type": "sensor_msgs/msg/JointState"
+    }
+   ],
+   "ros_topics_supported": true,
+   "type": "joint_target"
+  },
+  {
+   "homeable": true,
+   "id": "head_joint",
+   "ports": [
+    {
+     "control_topic": "/kstone/control/joint",
+     "control_type": "sensor_msgs/msg/JointState",
+     "labels": [
+      "head_joint1",
+      "head_joint2"
+     ],
+     "lower": [
+      -0.5,
+      -1.5708
+     ],
+     "name": "target",
+     "ros_exposed": true,
+     "type": "vector",
+     "upper": [
+      0.9,
+      1.5708
+     ]
+    }
+   ],
+   "ros_interfaces": [
+    {
+     "depth": 10.0,
+     "direction": "subscribe",
+     "durability": "volatile",
+     "module_routes": [
+      {
+       "joint_names": [
+        "torso_joint1",
+        "torso_joint2",
+        "torso_joint3",
+        "torso_joint4"
+       ],
+       "module": "torso_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "l_arm_joint1",
+        "l_arm_joint2",
+        "l_arm_joint3",
+        "l_arm_joint4",
+        "l_arm_joint5",
+        "l_arm_joint6",
+        "l_arm_joint7"
+       ],
+       "module": "left_arm_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "r_arm_joint1",
+        "r_arm_joint2",
+        "r_arm_joint3",
+        "r_arm_joint4",
+        "r_arm_joint5",
+        "r_arm_joint6",
+        "r_arm_joint7"
+       ],
+       "module": "right_arm_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "left_thumb_metacarpal_joint",
+        "left_thumb_proximal_joint",
+        "left_index_proximal_joint",
+        "left_middle_proximal_joint",
+        "left_ring_proximal_joint",
+        "left_pinky_proximal_joint"
+       ],
+       "module": "left_hand_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "right_thumb_metacarpal_joint",
+        "right_thumb_proximal_joint",
+        "right_index_proximal_joint",
+        "right_middle_proximal_joint",
+        "right_ring_proximal_joint",
+        "right_pinky_proximal_joint"
+       ],
+       "module": "right_hand_joint",
+       "port": "target"
+      },
+      {
+       "joint_names": [
+        "head_joint1",
+        "head_joint2"
+       ],
+       "module": "head_joint",
+       "port": "target"
+      }
+     ],
+     "port": "target",
+     "reliability": "reliable",
+     "routing": "by_joint_name",
+     "semantics": "target",
+     "source": "command",
+     "topic": "/kstone/control/joint",
+     "type": "sensor_msgs/msg/JointState"
+    }
+   ],
+   "ros_topics_supported": true,
+   "type": "joint_target"
+  },
+  {
+   "homeable": false,
+   "id": "gaze",
+   "ports": [],
+   "ros_interfaces": [],
+   "ros_topics_supported": false,
+   "type": "gaze"
+  },
+  {
+   "homeable": false,
+   "id": "com",
+   "ports": [],
+   "ros_interfaces": [],
+   "ros_topics_supported": false,
+   "type": "center_of_mass"
+  },
+  {
+   "homeable": false,
+   "id": "self_collision",
+   "ports": [],
+   "ros_interfaces": [],
+   "ros_topics_supported": false,
+   "type": "self_collision"
+  }
+ ],
+ "rate_hz": 50.0,
+ "schema_version": 1.0,
+ "world_frame": "world"
+}

@@ -1,0 +1,10 @@
+# Dependencies of lookie_control; entries must match ../lookie.repos.
+repositories:
+  kstone:
+    type: git
+    url: https://github.com/AgilexOpensource/kstone.git
+    version: main
+  kstone_ros:
+    type: git
+    url: https://github.com/AgilexOpensource/kstone_ros.git
+    version: main

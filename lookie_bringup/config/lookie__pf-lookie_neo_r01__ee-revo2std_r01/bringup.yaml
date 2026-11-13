@@ -1,0 +1,22 @@
+# Bringup for lookie__pf-lookie_neo_r01__ee-revo2std_r01.
+# Paths are package://<pkg>/<relative>, absolute, or relative to this file.
+namespace: neo
+
+description:
+  urdf: package://lookie_description/urdf/lookie__pf-lookie_neo_r01__ee-revo2std_r01.urdf
+  collision_urdf: package://lookie_description/urdf/lookie__pf-lookie_neo_r01__ee-revo2std_r01_collision.urdf
+  initial: package://lookie_description/config/lookie__pf-lookie_neo_r01__ee-revo2std_r01_initial.yaml
+
+driver:
+  robot_yaml: driver_motors.yaml
+  params_file: driver_ros.yaml
+  bridge_config: driver_joint_bridge.yaml
+
+teleop:
+  xr_media: package://lookie_bringup/config/xr_media_ros/xr_media.yaml
+  lookie_teleop:  # applied in order, later files override earlier ones
+    - package://lookie_bringup/config/lookie_teleop/common.yaml
+    - teleop.yaml
+
+kstone:
+  config: kstone.yaml

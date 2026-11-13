@@ -1,0 +1,43 @@
+# All dependencies of lookie_bringup, including those of lookie_driver, lookie_control and lookie_teleop; entries must match ../lookie.repos.
+repositories:
+  kstone:
+    type: git
+    url: https://github.com/AgilexOpensource/kstone.git
+    version: main
+  kstone_ros:
+    type: git
+    url: https://github.com/AgilexOpensource/kstone_ros.git
+    version: main
+  lookie_description:
+    type: git
+    url: https://github.com/AgilexOpensource/lookie_description.git
+    version: master
+  xr_media_ros:
+    type: git
+    url: https://github.com/AgilexOpensource/xr_media_ros.git
+    version: main
+  head_ros:
+    type: git
+    url: https://github.com/AgilexOpensource/head_ros.git
+    version: main
+  lift_ros:
+    type: git
+    url: https://github.com/AgilexOpensource/lift_ros.git
+    version: main
+  fold_ros:
+    type: git
+    url: https://github.com/AgilexOpensource/fold_ros.git
+    version: main
+  agx_arm_ros:
+    type: git
+    url: https://github.com/agilexrobotics/agx_arm_ros.git
+    version: ros2
+  # Scout Mini chassis driver.
+  scout_ros2:
+    type: git
+    url: https://github.com/AgilexOpensource/scout_ros2.git
+    version: humble
+  ugv_sdk:
+    type: git
+    url: https://github.com/westonrobot/ugv_sdk.git
+    version: main
