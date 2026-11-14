@@ -46,6 +46,7 @@ lift:
 
     # 腰部 pitch RB200
     - joint_name: torso_joint2
+      protocol: rb200
       node_id: 2
       polarity: -1.0
       profile_vel: 3.0

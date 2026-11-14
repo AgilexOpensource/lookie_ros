@@ -33,6 +33,7 @@ head:
       torque_limit: 6.0
 
 fold:
+  protocol: rb200
   can_channel: can_torso
   profile_vel: 3.0
   profile_accel: 5.0

@@ -199,7 +199,7 @@ modules:
   #   # margin: 0.02
   #   margin: 0.05
   #   recovery_tasks: [torso_pose]
-  #   closed_loop: true
+  #   closed_loop: false
   #   payloads:
   #     - {frame: l_gripper_tip, mass: 3.0}
   #     - {frame: r_gripper_tip, mass: 3.0}
@@ -221,7 +221,7 @@ modules:
     # the two grippers (base, jaws) never collide-check each other
     exclude_subtrees:
       - [l_gripper_base_link, r_gripper_base_link]
-    closed_loop: true
+    closed_loop: false
     # constraint: {clearance: 0.002, activation_margin: 0.02, hysteresis: 0.005, gain: 1.5}
     constraint: {clearance: 0.002, activation_margin: 0.01, hysteresis: 0.005, gain: 1.5, approach_deceleration: 20}
 #  obstacles:
