@@ -6,13 +6,20 @@ from .frames import rotation_angle
 
 
 def kstone_health(state: dict | None, age: float, timeout_s: float, require_fresh: bool,
-                  modules: list, check_held: bool = True) -> str | None:
+                  modules: list, check_held: bool = True, ignore_groups=()) -> str | None:
+    """``ignore_groups``: kstone feedback groups that may go stale without disabling (end effectors)."""
     if state is None or age > timeout_s:
         return "运控状态超时"
     if state.get("fault"):
         return f"运控故障: {state['fault']}"
-    if require_fresh and not state.get("fresh", False):
-        return "运控状态不新鲜 (fresh=false)"
+    if require_fresh:
+        groups = state.get("groups")
+        if groups:
+            stale = [g.get("name", "?") for g in groups if not g.get("fresh", False) and g.get("name") not in ignore_groups]
+            if stale:
+                return f"运控状态不新鲜 (fresh=false: {', '.join(stale)})"
+        elif not state.get("fresh", False):
+            return "运控状态不新鲜 (fresh=false)"
     mods = state.get("modules", {})
     for mid in modules:
         m = mods.get(mid)
@@ -29,9 +36,14 @@ class XrMonitor:
     Results are per name so a single lost controller can stop only its arm (design §12).
     """
 
-    def __init__(self, timeout_s: float, jump_pos: float, jump_ang: float, max_reach: float):
+    def __init__(self, timeout_s: float, jump_pos: float, jump_ang: float, max_reach: float,
+                 jump_speed: float = 0.0, jump_rate: float = 0.0):
+        """Controllers may also move ``jump_speed`` (m/s) / ``jump_rate`` (rad/s) times the stamp interval
+        between two checks (at most 0.1 s), so a fast but continuous hand motion is not a jump; the headset
+        stays strict."""
         self.timeout_s = timeout_s
         self.jump_pos, self.jump_ang = jump_pos, jump_ang
+        self.jump_speed, self.jump_rate = jump_speed, jump_rate
         self.max_reach = max_reach
         self._last = {}
 
@@ -64,9 +76,11 @@ class XrMonitor:
                 if stamps[name] < last_stamp:
                     out[name] = f"XR {name} 时间戳回退"
                 elif stamps[name] > last_stamp:
-                    if np.linalg.norm(pose[:3, 3] - last_pose[:3, 3]) > self.jump_pos:
+                    # capped so a pose resuming after a data gap is still checked for a jump
+                    dt = min(stamps[name] - last_stamp, 0.1) if name in ("left", "right") else 0.0
+                    if np.linalg.norm(pose[:3, 3] - last_pose[:3, 3]) > self.jump_pos + self.jump_speed * dt:
                         out[name] = f"XR {name} 位置跳变"
-                    elif rotation_angle(last_pose[:3, :3].T @ pose[:3, :3]) > self.jump_ang:
+                    elif rotation_angle(last_pose[:3, :3].T @ pose[:3, :3]) > self.jump_ang + self.jump_rate * dt:
                         out[name] = f"XR {name} 姿态跳变"
             self._last[name] = (pose, stamps[name])
         head = poses.get("headset")
@@ -83,37 +97,3 @@ class XrMonitor:
             if name in issues:
                 return issues[name]
         return next(iter(issues.values()), None)
-
-
-class ErrorRateMonitor:
-    """Flags tracking-error jumps: low-passed d(error)/dt above a limit for n consecutive samples.
-
-    A sustained (constant) error never trips it.
-    """
-
-    def __init__(self, rate_pos: float, rate_ang: float, n: int, lpf_hz: float):
-        self.rate_pos, self.rate_ang = rate_pos, rate_ang
-        self.n = n
-        self.lpf_hz = lpf_hz
-        self.reset()
-
-    def reset(self) -> None:
-        self._prev = None
-        self._rate = np.zeros(2)
-        self._count = 0
-
-    def update(self, stamp: float, pos_err: float, ang_err: float) -> bool:
-        err = np.array([pos_err, ang_err], dtype=float)
-        if self._prev is None:
-            self._prev = (stamp, err)
-            return False
-        dt = stamp - self._prev[0]
-        if dt <= 0.0:
-            return False
-        raw = (err - self._prev[1]) / dt
-        self._prev = (stamp, err)
-        alpha = 1.0 - np.exp(-2.0 * np.pi * self.lpf_hz * dt)
-        self._rate += alpha * (raw - self._rate)
-        over = abs(self._rate[0]) > self.rate_pos or abs(self._rate[1]) > self.rate_ang
-        self._count = self._count + 1 if over else 0
-        return self._count >= self.n

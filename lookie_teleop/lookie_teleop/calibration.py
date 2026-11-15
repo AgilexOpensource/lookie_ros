@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .frames import Mount, invert, rotation_angle, wrap_angle
+from .frames import Mount, invert, wrap_angle
 
 SIDES = ("left", "right")
 
@@ -22,8 +22,7 @@ class CalibConfig:
     z_range: tuple = (-0.60, 0.30)
     min_cross: float = 0.10
     max_side: float = 0.20
-    spacing_tol: float = 0.10
-    rel_ori_warn: float = np.radians(45.0)
+    spacing_tol: float = 0.10     # warning only; a mismatch is closed by the catch-up
 
 
 @dataclass
@@ -32,15 +31,22 @@ class Reference:
     p0: dict                      # side -> 4x4 controller pose in F_h(0)
     M0: np.ndarray                # controller midpoint in F_h(0)
     m0: np.ndarray                # end-effector midpoint in F_t(0)
+    C: dict                       # side -> controller grip -> end-effector tool rotation, anchored at A
     zh0: float                    # body height (world z of B_0)
     theta0: float                 # body lean
     yaw_h0: float                 # body yaw in XR world
     warnings: list = field(default_factory=list)
 
 
-def check(headset: np.ndarray, controllers: dict, ee: dict, R: np.ndarray, C: dict,
+def check(headset: np.ndarray, controllers: dict, ee: dict, R: np.ndarray,
           cfg: CalibConfig) -> tuple[str | None, Reference | None]:
     """``controllers``: side -> 4x4 in XR world (TCP applied); ``ee``: side -> 4x4 in F_t(0).
+
+    Positions are aligned at the midpoint: the vector between the hands maps 1:1, so the arms take
+    the operator's hand spacing. A spacing that differs from the arms' only warns; the per-arm
+    catch-up then moves each arm onto its mapped target. ``C`` is solved so that ``R Q^p_i(0) C_i``
+    equals the end-effector orientation at A: orientation is relative to the grip at A, so
+    controllers and hand tracking with different axes map alike.
 
     Returns ``(reject_reason, None)`` or ``(None, Reference)``; only the first failure is reported.
     """
@@ -61,23 +67,19 @@ def check(headset: np.ndarray, controllers: dict, ee: dict, R: np.ndarray, C: di
     for side, p in (("左", pl), ("右", pr)):
         if not cfg.z_range[0] <= p[2] <= cfg.z_range[1]:
             return f"{side}手柄高度 {p[2]:.2f} m 超出 [{cfg.z_range[0]}, {cfg.z_range[1]}]", None
+
+    warnings = []
     el, er = ee["left"][:3, 3], ee["right"][:3, 3]
     gap_ctrl, gap_ee = np.linalg.norm(pl - pr), np.linalg.norm(el - er)
     if abs(gap_ctrl - gap_ee) >= cfg.spacing_tol:
-        return f"两手柄间距 {gap_ctrl:.2f} m 与双臂末端间距 {gap_ee:.2f} m 相差过大", None
-
-    warnings = []
-    q = {s: R @ p0[s][:3, :3] @ C[s] for s in SIDES}
-    rel_ctrl = q["left"].T @ q["right"]
-    rel_ee = ee["left"][:3, :3].T @ ee["right"][:3, :3]
-    if rotation_angle(rel_ctrl.T @ rel_ee) > cfg.rel_ori_warn:
-        warnings.append("两手柄相对姿态与双臂末端相差较大，首次激活将平滑追赶")
+        warnings.append(f"两手柄间距 {gap_ctrl:.2f} m 与双臂末端间距 {gap_ee:.2f} m 不同，激活时双臂会平滑追赶到手柄间距")
+    C = {s: (R @ p0[s][:3, :3]).T @ ee[s][:3, :3] for s in SIDES}
     d = pl - pr
     if abs(wrap_angle(np.arctan2(-d[0], d[1]))) > cfg.yaw_warn:
         warnings.append("头盔朝向与胸口不一致，底盘/腰 yaw 可能有固定偏差")
 
     body = mount.body(headset)
     return None, Reference(
-        mount=mount, p0=p0, M0=0.5 * (pl + pr), m0=0.5 * (el + er),
+        mount=mount, p0=p0, M0=0.5 * (pl + pr), m0=0.5 * (el + er), C=C,
         zh0=float(body[2, 3]), theta0=mount.lean(headset), yaw_h0=mount.yaw(headset),
         warnings=warnings)

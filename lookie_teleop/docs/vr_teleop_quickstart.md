@@ -99,22 +99,11 @@ Long press **B**. The robot's torso, arms, and chassis return to the initial pos
 
 1. Stand up straight, facing the robot's forward direction.
 2. Hold both hands **directly in front of** your chest, **left hand on the left and right hand on the right, not crossed**.
-3. Match the **distance between your hands and the orientation of your palms** to the robot's current arms as closely as possible.
+3. Your hand distance need not match the robot's: the arms align to the relative position of the two controllers, a different distance only shows a hint, and after activation the arms smoothly catch up to your hand distance. Palm orientation need not match either: the orientation you hold at the long press of A maps to the robot's current hand orientation.
 4. Hold still and long press **A**. Teleoperation starts once calibration is complete.
 
-```mermaid
-flowchart LR
-    subgraph Operator
-        LH["🖐 Left hand"] <-- "Distance d" --> RH["🖐 Right hand"]
-    end
-    subgraph Robot
-        LE["✋ Left hand"] <-- "Distance d" --> RE["✋ Right hand"]
-    end
-    Operator -. "Keep hand distance as close as possible" .-> Robot
-```
-
 > - Recalibrate every time after returning to the initial pose.
-> - Calibration is rejected in the following cases; adjust and try again: you are not standing straight; your hands are not in front of your chest, are crossed, or are off to one side; the distance between your hands differs too much from the robot's.
+> - Calibration is rejected in the following cases; adjust and try again: you are not standing straight; your hands are not in front of your chest, are crossed, or are off to one side.
 > - A slightly tilted headset does not affect operation. If you are told the headset is tilted, straighten it and long press A again.
 
 ### ③ Control the arms
@@ -126,7 +115,7 @@ flowchart LR
 
 > 💡 **Tip**: After releasing the grip trigger, you can reposition yourself or your hand, then reactivate. The arm smoothly catches up to the new position. Use this when you cannot reach or your posture is awkward.
 
-> 💡 **Range limits**: If you reach too far, too close, too high, or too low, reach behind your body, or cross your hands, the robot arm stops at its range limit and stops following. Following resumes automatically once your hand moves back into range.
+> 💡 **Engage limit**: If your hand is too far from the arms' initial pose (outside a box centred on it) when you engage with the grip, the robot arm first stops at the edge of that box. Once your hand has been back inside the box, the arm follows freely, even outside it. Releasing the grip and engaging again starts from the limit again. The hands may cross the midline.
 
 ### ④ Control the hands
 
@@ -147,12 +136,13 @@ On omni chassis models, long press **Y** first to switch to waist mode. Differen
 | Your body motion | Omni chassis models (e.g. Trio) | Differential chassis models (e.g. Neo) |
 |---|---|---|
 | Lean forward / back | Waist pitches forward / back | Waist pitches forward / back |
+| Move body forward / back | Waist moves forward / back | No response |
 | Squat / stand up | Waist lowers / rises | No response (use the right joystick) |
 | Turn in place | Waist turns | No response |
 
 ### 5.2 Chassis
 
-**Joystick control** (all models):
+**Joystick control** (all models; after Home and before the long press on A, the joysticks already move the chassis, but waist fine-tuning has no effect yet):
 
 | Joystick | Omni chassis models | Differential chassis models |
 |---|---|---|
@@ -164,7 +154,7 @@ On omni chassis models, long press **Y** first to switch to waist mode. Differen
 
 1. Long press **Y** to switch to chassis mode.
 2. Hold both grip triggers at the same time.
-3. Walk and turn. When you move forward, the robot moves forward; when you turn, the robot turns.
+3. Walk and turn. When you move forward, the robot moves forward; when you turn, the robot turns. Squatting / standing up and leaning still lower / raise and pitch the waist.
 
 > - Joysticks take priority: pushing a joystick pauses body drive, which resumes automatically when you release it.
 > - The chassis moves slightly slower than you. If it falls too far behind, the robot catches up at a limited speed and does not suddenly lunge.
@@ -205,13 +195,17 @@ The system **stops teleoperation automatically** when it detects any of the foll
 
 | Category | Condition |
 |---|---|
-| Device | Headset tracking lost, VR exited, headset asleep, recentering during teleoperation |
-| Motion | Moving too fast while an arm is catching up; sudden large jumps of the hands; controller too far from the body |
+| Device | Recentering during teleoperation |
+| Motion | Sudden large jumps of the hands; controller too far from the body |
 | Robot | Robot cannot keep up, motion limit reached, motion control reports a fault |
 
 After an automatic stop, the robot holds its current pose and the chassis stops. **Only long press B and the index trigger (hands) work.**
 
 **When a single controller is lost** (tracking lost, disconnected, or jumping data), only the arm on that side stops. The other arm and the joysticks still work, and body motion temporarily does not drive the waist or chassis. Once the controller recovers, double-press and hold the grip trigger on that side to regain control.
+
+**When headset data stops for more than 0.5 s** (tracking lost, VR exited, headset asleep, network stall), both arms stop and teleoperation is not stopped; the joysticks still work. Once the headset recovers, double-press and hold each grip trigger to regain control.
+
+**When you move too fast while an arm is catching up, or the catch-up times out**, only that arm stops where it is and everything else keeps working. Release the grip trigger on that side, then double-press and hold it to catch up again. No B / A is needed.
 
 ```mermaid
 flowchart LR
@@ -234,9 +228,9 @@ flowchart LR
 
 | Symptom | Possible cause | Solution |
 |---|---|---|
-| Long press A does nothing | Not in initial pose; controllers not tracked; not standing straight; hands not in front of chest, crossed, or off to one side; hand distance differs too much from the robot's | Long press B first; make sure the controllers are within tracking range; stand straight with hands in front of your chest and apart, adjust the distance, and try again |
+| Long press A does nothing | Not in initial pose; controllers not tracked; not standing straight; hands not in front of chest, crossed, or off to one side | Long press B first; make sure the controllers are within tracking range; stand straight with hands in front of your chest and apart, and try again |
 | Headset reported as tilted during calibration | Headset mounted off-center, or hands not aligned front to back | Straighten the headset, align your hands front to back, then long press A again |
-| Robot arm stops following when the hand reaches a certain point | Arm range limit reached | Move your hand back into range; following resumes automatically |
+| Robot arm stops and does not follow after engaging | The hand was outside the engage limit when engaging | Move your hand back near the arms' initial pose; the arm then follows freely |
 | Arm does not move while holding the grip trigger | Not double-pressed; not calibrated; arm is catching up | Double-press and hold; complete calibration; hold your hand still and wait |
 | Robot does not respond when walking or squatting | Only one grip trigger held; wrong mode; joystick in use | Hold both grip triggers at the same time; long press Y to switch modes; release the joystick |
 | Long press Y does nothing | Differential chassis models do not support body drive of the chassis | Use the joysticks to drive the chassis |

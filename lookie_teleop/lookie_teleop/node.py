@@ -22,21 +22,23 @@ from std_srvs.srv import Trigger
 
 from . import calibration
 from .buttons import DoubleTapHold, Hysteresis, LongPress, ShortLongPress
-from .catchup import CatchUp, limit_step, step_toward
+from .catchup import CatchUp
 from .frames import heading_frame, invert, matrix_to_pose, pitch_of, planar, pose_to_matrix, \
     rpy_to_matrix, rotation_angle, tcp_transform
 from .home import HomeTracker, parse_request_id
-from .mapping import ArmMap, Chassis, ChassisConfig, Waist, WaistConfig, apply_deadzone, ee_target, \
+from .mapping import ArmMap, Chassis, ChassisConfig, Settle, Waist, WaistConfig, apply_deadzone, ee_target, \
     to_base
 from .profile import parse_discover
-from .safety import ErrorRateMonitor, XrMonitor, kstone_health
+from .safety import XrMonitor, kstone_health
 from .transforms import matrix_to_quat, quat_to_matrix, yaw_of
-from .workspace import SIDES, WorkspaceConfig, project
+from .workspace import SIDES, Workspace, project
 
 NOT_READY, HOMING, HOMED, ENABLED, DISABLED = "未就绪", "回Home", "已归位", "已使能", "失能"
 STOPPED, CATCHING, ACTIVE = "停住", "追赶", "激活"
+CHASSIS_MODE_WAIST_AXES = frozenset({"waist_z", "waist_pitch"})
 ARM_MODULES = {"left": "left_arm_pose", "right": "right_arm_pose"}
 XR_NAMES = {"headset": "headset", "left": "left_controller", "right": "right_controller"}
+SPEED_WINDOW_S = 0.05
 # Joy layout from xr_media_ros: axes [sx, sy, trigger, grip], buttons [trigger, grip, stick, X/A, Y/B]
 AX_SX, AX_SY, AX_TRIGGER, AX_GRIP = 0, 1, 2, 3
 BTN_XA, BTN_YB = 3, 4
@@ -47,27 +49,24 @@ LATCHED = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
 PARAMS = {
     "xr_namespace": "/xr_media", "kstone_namespace": "kstone", "rate_hz": 50.0,
     # axes the headset may drive; chassis is dropped unless discover reports a holonomic base
-    "body_axes": ["chassis", "waist_z", "waist_pitch", "waist_yaw"],
+    "body_axes": ["chassis", "waist_x", "waist_z", "waist_pitch", "waist_yaw"],
     "long_press_s": 1.0, "double_tap_s": 0.4, "grip_on": 0.6, "grip_off": 0.4,
     "deadzone": 0.15, "max_vx": 0.5, "max_vy": 0.5, "max_wz": 1.0,
     "joy_z_rate": 0.10, "joy_pitch_rate": 0.3,
     "headset_forward_axis": [1.0, 0.0, 0.0], "mount_max_deg": 35.0, "yaw_warn_deg": 15.0,
     "calib_x": [0.15, 0.70], "calib_z": [-0.6, 0.3], "min_cross": 0.10, "max_side": 0.20,
-    "spacing_tol": 0.10, "rel_ori_warn_deg": 45.0,
+    "spacing_tol": 0.10,
     "R_body_to_torso": [0.0, 0.0, 0.0], "controller_tcp": [0.0] * 6,
-    "k_z": 1.0, "k_pitch": 1.0, "waist_z_range": [-0.3, 0.1], "waist_pitch_range": [-0.2, 0.6],
-    "waist_yaw_range": [-0.8, 0.8], "waist_pitch_limits_deg": [-45.0, 90.0], "waist_z_rate": 0.2, "waist_pitch_rate": 0.8, "waist_yaw_rate": 1.0,
+    "k_x": 1.0, "k_z": 1.0, "k_pitch": 1.0, "waist_z_range": [-0.8, 0.15],
+    "waist_x_rate": 0.2,
+    "waist_pitch_limits_deg": [-30.0, 90.0], "waist_yaw_limits_deg": [-89.0, 89.0], "waist_z_rate": 0.2, "waist_pitch_rate": 0.8, "waist_yaw_rate": 1.0,
     "chassis_scale": 1.0, "chassis_deadband_pos": 0.02, "chassis_deadband_deg": 2.0,
-    "chassis_v_max": 0.5, "chassis_w_max": 1.0, "chassis_max_dev_pos": 0.2, "chassis_max_dev_deg": 15.0,
-    "shoulder_offsets": [0.0, 0.2005, 0.05, 0.0, -0.2005, 0.05],
-    "r_min": 0.2, "r_max": 0.75, "x_min": 0.1, "ws_z_range": [-0.6, 0.3], "midline_delta": 0.05,
-    "min_hand_gap": 0.1,
+    "chassis_vx_max": 0.5, "chassis_vy_max": 0.5, "chassis_w_max": 1.0,
     "v_catch": 0.15, "w_catch": 0.8, "catch_pos_tol": 0.02, "catch_ori_tol_deg": 5.0,
     "catch_timeout_s": 5.0, "catch_fast_v": 0.8, "catch_fast_w": 3.0,
-    "v_max": 1.0, "w_max": 3.0,
-    "xr_timeout_s": 0.2, "jump_pos": 0.10, "jump_ang_deg": 30.0, "max_reach": 1.0,
-    "kstone_timeout_s": 0.3, "require_fresh": True,
-    "track_err_rate_pos": 1.0, "track_err_rate_ang": 6.0, "track_err_rate_n": 3, "track_err_lpf_hz": 10.0,
+    "xr_timeout_s": 0.5, "jump_pos": 0.10, "jump_ang_deg": 30.0, "jump_speed": 6.0, "jump_rate_deg": 1200.0,
+    "max_reach": 1.0,
+    "kstone_timeout_s": 0.3, "require_fresh": True, "ee_feedback_groups": ["left_hand", "right_hand"],
     "cmd_vel_min_hz": 10.0, "trigger_deadzone": 0.05,
     # end effectors are never homed: they stay under the main trigger in every state
     "home_modules": ["torso_pose", "left_arm_pose", "right_arm_pose"],
@@ -75,10 +74,9 @@ PARAMS = {
     "default_body_mode": "waist",
     "ee_modules": ["left_hand_joint", "right_hand_joint"],
 }
-# Parameters whose default is empty: declared by type, "unset" means fall back (C: home orientation,
-# ee joints/limits: discover, ee_open: zeros, ee_close: upper limit).
+# Parameters whose default is empty: declared by type, "unset" means fall back (ee joints/limits:
+# discover, ee_open: zeros, ee_close: upper limit).
 TYPED_PARAMS = {
-    "C_left": Parameter.Type.DOUBLE_ARRAY, "C_right": Parameter.Type.DOUBLE_ARRAY,
     "ee_open": Parameter.Type.DOUBLE_ARRAY, "ee_close": Parameter.Type.DOUBLE_ARRAY,
     "ee_lower": Parameter.Type.DOUBLE_ARRAY, "ee_upper": Parameter.Type.DOUBLE_ARRAY,
     "ee_joints_left": Parameter.Type.STRING_ARRAY, "ee_joints_right": Parameter.Type.STRING_ARRAY,
@@ -107,7 +105,7 @@ class Arm:
         self.pos = pos
         self.quat = quat
         self.catch = None
-        self.goal_proj = None
+        self.bounded = True   # clamp into the workspace until the mapped target is first inside it (§9.2)
 
 
 class TeleopNode(Node):
@@ -129,29 +127,24 @@ class TeleopNode(Node):
             forward=tuple(p["headset_forward_axis"]), mount_max=math.radians(p["mount_max_deg"]),
             yaw_warn=math.radians(p["yaw_warn_deg"]), x_range=tuple(p["calib_x"]),
             z_range=tuple(p["calib_z"]), min_cross=p["min_cross"], max_side=p["max_side"],
-            spacing_tol=p["spacing_tol"], rel_ori_warn=math.radians(p["rel_ori_warn_deg"]))
+            spacing_tol=p["spacing_tol"])
         self.waist_cfg = WaistConfig(
-            k_z=p["k_z"], k_pitch=p["k_pitch"], z_range=tuple(p["waist_z_range"]),
-            pitch_range=tuple(p["waist_pitch_range"]), yaw_range=tuple(p["waist_yaw_range"]),
+            k_x=p["k_x"], k_z=p["k_z"], k_pitch=p["k_pitch"],
+            z_range=tuple(p["waist_z_range"]),
             pitch_limits=tuple(math.radians(v) for v in p["waist_pitch_limits_deg"]),
-            z_rate=p["waist_z_rate"], pitch_rate=p["waist_pitch_rate"], yaw_rate=p["waist_yaw_rate"])
+            yaw_limits=tuple(math.radians(v) for v in p["waist_yaw_limits_deg"]),
+            x_rate=p["waist_x_rate"], z_rate=p["waist_z_rate"], pitch_rate=p["waist_pitch_rate"],
+            yaw_rate=p["waist_yaw_rate"])
         self.chassis_cfg = ChassisConfig(
             scale=p["chassis_scale"], deadband_pos=p["chassis_deadband_pos"],
             deadband_ang=math.radians(p["chassis_deadband_deg"]),
-            v_max=p["chassis_v_max"], w_max=p["chassis_w_max"], max_dev_pos=p["chassis_max_dev_pos"],
-            max_dev_ang=math.radians(p["chassis_max_dev_deg"]))
-        so = p["shoulder_offsets"]
-        self.ws_cfg = WorkspaceConfig(
-            shoulder_offsets={"left": so[0:3], "right": so[3:6]}, r_min=p["r_min"], r_max=p["r_max"],
-            x_min=p["x_min"], z_range=tuple(p["ws_z_range"]), midline_delta=p["midline_delta"],
-            min_hand_gap=p["min_hand_gap"])
+            vx_max=p["chassis_vx_max"], vy_max=p["chassis_vy_max"],
+            w_max=p["chassis_w_max"])
+        self.ws = None   # set at A
         self.R = rpy_to_matrix(*p["R_body_to_torso"])
         self.tcp = tcp_transform(p["controller_tcp"])
         self.xr_monitor = XrMonitor(p["xr_timeout_s"], p["jump_pos"], math.radians(p["jump_ang_deg"]),
-                                    p["max_reach"])
-        self.err_monitor = {s: ErrorRateMonitor(p["track_err_rate_pos"], p["track_err_rate_ang"],
-                                                int(p["track_err_rate_n"]), p["track_err_lpf_hz"])
-                            for s in SIDES}
+                                    p["max_reach"], p["jump_speed"], math.radians(p["jump_rate_deg"]))
 
         self.profile = None
         self.state = NOT_READY
@@ -162,9 +155,11 @@ class TeleopNode(Node):
         self.stick_axis = "z"
         self.arms = {s: Arm() for s in SIDES}
         self.arm_faults = {}                          # side -> reason its controller is unusable
+        self.catch_aborts = {}                        # side -> why its last catch-up stopped; cleared on engage
         self.arm_map = None
         self.mount = None
         self.waist = None
+        self._waist_fh_inv = None                     # F_h at the waist x reference, inverted
         self.chassis = Chassis(self.chassis_cfg)
         self.dual_active = False
         self.stick_was_active = False
@@ -176,7 +171,6 @@ class TeleopNode(Node):
         self._speed_last = {s: None for s in SIDES}
         self.kstate = None
         self.kstate_t = None
-        self._err_stamp = None
         self.fb = {}                                  # module id -> 4x4 feedback
         self.ee = {}                                # side -> dict(module, names, open, close, lower, upper)
         self._ee_last = {s: (None, -1.0) for s in SIDES}
@@ -316,11 +310,13 @@ class TeleopNode(Node):
     def _update_ctrl_speed(self, side):
         pose, stamp, _ = self.xr[side]
         last = self._speed_last[side]
-        if last is not None and stamp > last[1]:
+        # XR stamps are receive times and samples can arrive bunched (< 1 ms apart): differentiate
+        # over at least SPEED_WINDOW_S so jitter is not read as a fast motion.
+        if last is not None and stamp - last[1] >= SPEED_WINDOW_S:
             dt = stamp - last[1]
             self.ctrl_speed[side] = (float(np.linalg.norm(pose[:3, 3] - last[0][:3, 3])) / dt,
                                      rotation_angle(last[0][:3, :3].T @ pose[:3, :3]) / dt)
-        if last is None or stamp > last[1]:
+        if last is None or stamp - last[1] >= SPEED_WINDOW_S or stamp < last[1]:
             self._speed_last[side] = (pose, stamp)
 
     def _health_modules(self):
@@ -329,7 +325,7 @@ class TeleopNode(Node):
     def _kstone_reason(self, now):
         age = now - self.kstate_t if self.kstate_t is not None else math.inf
         return kstone_health(self.kstate, age, self.p["kstone_timeout_s"], self.p["require_fresh"],
-                             self._health_modules())
+                             self._health_modules(), ignore_groups=self.p["ee_feedback_groups"])
 
     # ------------------------------------------------------------------ tick
     def _tick(self):
@@ -343,6 +339,8 @@ class TeleopNode(Node):
                 self._update_home(now)
             elif self.state == ENABLED:
                 self._run_enabled(left, right, now, dt)
+            elif self.state == HOMED:
+                self._run_homed(left, right, now)
             self._end_effectors(left, right, now)
         if now - self._last_status >= 0.1:
             self._last_status = now
@@ -350,7 +348,9 @@ class TeleopNode(Node):
 
     def _buttons(self, left, right, now):
         b = self.lp_b.update(self._button(right, BTN_YB), now)  # "long" | "short" | None
-        a = self.lp_a.update(self._button(right, BTN_XA), now)
+        # A only counts while homed: a hold started during Home fires once Home completes instead of
+        # being used up while it was ignored (which needed a second press).
+        a = self.lp_a.update(self._button(right, BTN_XA) and self.state == HOMED, now)
         y = self.lp_y.update(self._button(left, BTN_YB), now)
         x = self.lp_x.update(self._button(left, BTN_XA), now)
         if b == "long" and self.state != HOMING:
@@ -424,36 +424,34 @@ class TeleopNode(Node):
             ft0 = heading_frame(torso[:3, 3], yaw_of(torso[:3, :3]))
             ft0_inv = invert(ft0)
             ee = {s: ft0_inv @ self.fb[ARM_MODULES[s]] for s in SIDES}
-            C = {}
-            for s in SIDES:
-                q = self._typed(f"C_{s}")
-                C[s] = quat_to_matrix(q if q else self.profile.pose_ports[ARM_MODULES[s]].home_quat)
             ctrls = {s: self._controller(s) for s in SIDES}
-            reason, ref = calibration.check(self.xr["headset"][0], ctrls, ee, self.R, C, self.calib_cfg)
+            reason, ref = calibration.check(self.xr["headset"][0], ctrls, ee, self.R, self.calib_cfg)
         if reason is not None:
             self.reason = f"使能被拒绝: {reason}"
             self.get_logger().warn(self.reason)
             return
         self.mount = ref.mount
-        self.arm_map = ArmMap(ref.M0, ref.m0, self.R, C)
+        self.arm_map = ArmMap(ref.M0, ref.m0, self.R, ref.C)
+        self.ws = Workspace.from_home(ee["left"][:3, 3], ee["right"][:3, 3])   # A is only accepted right after Home
         self.waist = Waist(torso[:3, 3], pitch_of(torso[:3, :3]), yaw_of(torso[:3, :3]), self.waist_cfg,
                            self.profile.axes)
         self.waist.set_body_reference(ref.zh0, ref.theta0)
         self.waist.record_yaw_reference(ref.yaw_h0)
         headset = self.xr["headset"][0]
+        self._waist_fh_inv = invert(self.mount.heading(headset))
         self._record_chassis(self.mount.heading(headset))
         self.warnings = list(ref.warnings)
         self.xr_monitor.reset()
         for s in SIDES:
             self.arms[s] = Arm()
             self.grip_tap[s].reset()
-            self.err_monitor[s].reset()
             self._speed_last[s] = None
             self.ctrl_speed[s] = (0.0, 0.0)
         self.arm_faults = {}
+        self.catch_aborts = {}
         self.dual_active = False
         self.stick_was_active = False
-        self._err_stamp = None
+        self.stick_settle = Settle()
         self.state = ENABLED
         self.reason = ""
         self.get_logger().info("已使能" + (f"（提示: {'；'.join(self.warnings)}）" if self.warnings else ""))
@@ -466,6 +464,8 @@ class TeleopNode(Node):
     def _record_references(self):
         headset = self.xr["headset"][0]
         self.waist.record_yaw_reference(self.mount.yaw(headset))
+        self.waist.record_x_reference()
+        self._waist_fh_inv = invert(self.mount.heading(headset))
         self._record_chassis(self.mount.heading(headset))
 
     def _halt(self):
@@ -474,6 +474,7 @@ class TeleopNode(Node):
             self.arms[s] = Arm()
             self.grip_tap[s].reset()
         self.arm_faults = {}
+        self.catch_aborts = {}
         self.dual_active = False
         self.clamped = set()
         if self.cmd_vel_pub is not None:
@@ -496,7 +497,13 @@ class TeleopNode(Node):
             self.xr_monitor.forget(name)  # no spurious jump against the pre-loss pose on recovery
         fresh = [k for k in self.xr if k not in stale and self.xr[k] is not None]
         jumps = self.xr_monitor.issues({k: self.xr[k][0] for k in fresh}, {k: self.xr[k][1] for k in fresh})
-        return {**jumps, **stale}
+        issues = {**jumps, **stale}
+        if "headset" in stale:
+            # a headset timeout stops both arms instead of disabling; a headset jump (recenter) still disables
+            for s in SIDES:
+                issues.setdefault(s, stale["headset"])
+            del issues["headset"]
+        return issues
 
     def _run_enabled(self, left, right, now, dt):
         # Every check runs before any mapping or publishing, so a bad frame never reaches kstone.
@@ -505,8 +512,6 @@ class TeleopNode(Node):
         missing = [m for m in ("torso_pose", *ARM_MODULES.values()) if m not in self.fb]
         if reason is None and missing:
             reason = f"缺少反馈 {missing}"
-        if reason is None:
-            reason = self._error_rate()
         if reason is not None:
             self._disable(reason)
             return
@@ -514,7 +519,7 @@ class TeleopNode(Node):
             if s in issues:
                 self._stop_arm(s, issues[s])
             elif s in self.arm_faults:
-                self.get_logger().info(f"{s} 手柄恢复，双击侧扳机重新接管")
+                self.get_logger().info(f"{s} XR 恢复，双击侧扳机重新接管")
                 del self.arm_faults[s]
 
         headset = self.xr["headset"][0]
@@ -532,11 +537,8 @@ class TeleopNode(Node):
                 self.arms[s] = Arm(self.arms[s].pos, self.arms[s].quat)
 
         # sticks: left = translation, right x = yaw, right y = selected waist offset
-        dz = self.p["deadzone"]
-        vx = -self.p["max_vx"] * apply_deadzone(self._axis(left, AX_SY), dz)
-        vy = -self.p["max_vy"] * apply_deadzone(self._axis(left, AX_SX), dz) if self.profile.holonomic else 0.0
-        wz = -self.p["max_wz"] * apply_deadzone(self._axis(right, AX_SX), dz)
-        ry = apply_deadzone(self._axis(right, AX_SY), dz)
+        vx, vy, wz = self._stick_twist(left, right)
+        ry = apply_deadzone(self._axis(right, AX_SY), self.p["deadzone"])
         if ry:
             rate = self.p["joy_z_rate"] if self.stick_axis == "z" else self.p["joy_pitch_rate"]
             self.waist.add_offset(self.stick_axis, -ry * rate * dt)
@@ -545,14 +547,34 @@ class TeleopNode(Node):
         if dual and not self.dual_active:
             self._record_references()
         self.dual_active = dual
-        drive_waist = dual and (self.body_mode == "waist" or not self.profile.has("chassis"))
-        body = (self.mount.body(headset)[2, 3], self.mount.lean(headset), self.mount.yaw(headset))
-        self.waist.update(dt, body if drive_waist else None)
+        chassis_mode = self.body_mode == "chassis" and self.profile.has("chassis")
+        b = self.mount.body(headset)
+        forward = (self._waist_fh_inv @ b)[0, 3]   # body displacement along the heading at the reference
+        body = (b[2, 3], self.mount.lean(headset), self.mount.yaw(headset), forward)
+        # chassis mode: the headset's planar motion drives the chassis, its height and lean still the waist
+        self.waist.update(dt, body if dual else None, CHASSIS_MODE_WAIST_AXES if chassis_mode else None)
 
         if not self._arms(now, dt, fh):
             return
         self._publish_pose("torso_pose", self.waist.position, matrix_to_quat(self.waist.rotation))
         self._chassis(vx, vy, wz, fh, dt, now)
+
+    def _stick_twist(self, left, right):
+        dz = self.p["deadzone"]
+        vx = -self.p["max_vx"] * apply_deadzone(self._axis(left, AX_SY), dz)
+        vy = -self.p["max_vy"] * apply_deadzone(self._axis(left, AX_SX), dz) if self.profile.holonomic else 0.0
+        wz = -self.p["max_wz"] * apply_deadzone(self._axis(right, AX_SX), dz)
+        return vx, vy, wz
+
+    def _run_homed(self, left, right, now):
+        """Homed: the sticks drive only the chassis, so the arm/waist Home pose that A relies on is kept."""
+        if self.cmd_vel_pub is None:
+            return
+        cmd = (0.0, 0.0, 0.0)
+        if self._kstone_reason(now) is None:
+            lim = self.profile.chassis_velocity
+            cmd = np.clip(self._stick_twist(left, right), lim.lower, lim.upper)
+        self._publish_twist(cmd, now)
 
     def _stop_arm(self, side, reason):
         """Controller loss stops only that arm: hold its pose, require a fresh double-tap later."""
@@ -562,11 +584,19 @@ class TeleopNode(Node):
         held = self.arms[side]
         self.arms[side] = Arm(held.pos, held.quat)
         self.grip_tap[side].reset()
-        self.err_monitor[side].reset()
         self._speed_last[side] = None
         self.ctrl_speed[side] = (0.0, 0.0)
 
+    def _abort_catch(self, side, reason):
+        """A failed catch-up stops only that arm where it is; a fresh double-tap and hold catches up again."""
+        self.get_logger().warn(f"{side}臂追赶中止: {reason}，双击并按住侧扳机重新追赶")
+        self.catch_aborts[side] = reason
+        held = self.arms[side]
+        self.arms[side] = Arm(held.pos, held.quat)
+        self.grip_tap[side].reset()   # the grip still held does not count; it must be released and double-tapped
+
     def _engage(self, side, now):
+        self.catch_aborts.pop(side, None)
         held = self.arms[side]
         arm = Arm(held.pos, held.quat)
         if arm.pos is None:
@@ -580,55 +610,48 @@ class TeleopNode(Node):
         self.arms[side] = arm
 
     def _arms(self, now, dt, fh) -> bool:
-        """Map, project, catch up / track, re-project, rate-limit and publish both arms (§8.1, §9).
+        """Map, clamp into the workspace, catch up / track (rate-limited) and publish both arms (§8.1, §9).
+
+        Each engage clamps the arm into the workspace only until its mapped target is first inside it;
+        after that the arm follows freely until it is stopped and engaged again.
 
         Stopped arms hold their pose in F_t, so waist Z moves them with the torso while waist
         pitch (not part of F_t) leaves every arm target unchanged in the base frame.
         """
         ft = self.waist.frame()
         ft_inv = invert(ft)
-        fixed, goals = {}, {}
+        goals = {}
         for s in SIDES:
             arm = self.arms[s]
             if arm.mode == STOPPED:
                 if arm.pos is None:
                     ee = ft_inv @ self.fb[ARM_MODULES[s]]
                     arm.pos, arm.quat = ee[:3, 3].copy(), matrix_to_quat(ee[:3, :3])
-                fixed[s] = arm.pos
             else:
                 goals[s] = self.arm_map.target(s, fh, self._controller(s))
         if not goals:
             self.clamped = set()
             self._publish_arms(ft)
             return True
-        projected, clamped = project({s: g[0] for s, g in goals.items()}, self.ws_cfg,
-                                     self.waist.pitch_rotation, fixed,
-                                     {s: self.arms[s].goal_proj for s in goals})
-        starts, speeds = {}, {}
-        for s, (_, rot) in goals.items():
+        bounded = {s: g[0] for s, g in goals.items() if self.arms[s].bounded}
+        projected, clamped = project(bounded, self.ws)
+        for s, (target, rot) in goals.items():
             arm = self.arms[s]
-            arm.goal_proj = projected[s]
-            starts[s] = arm.pos.copy()
-            speeds[s] = arm.catch.v if arm.mode == CATCHING else self.p["v_max"]
+            if s in bounded and s not in clamped:
+                arm.bounded = False
+            goal = projected.get(s, target)
             gquat = matrix_to_quat(rot)
             if arm.mode == CATCHING:
-                arm.pos, arm.quat, status = arm.catch.step(arm.pos, arm.quat, projected[s], gquat, dt, now,
+                arm.pos, arm.quat, status = arm.catch.step(arm.pos, arm.quat, goal, gquat, dt, now,
                                                            self.ctrl_speed[s])
                 if status == "converged":
                     arm.mode = ACTIVE
-                    self.err_monitor[s].reset()
                 elif status != "catching":
-                    self._disable(f"{s}臂追赶失败: {status}")
-                    return False
+                    self._abort_catch(s, status)
             else:
-                arm.pos, arm.quat = step_toward(arm.pos, arm.quat, projected[s], gquat,
-                                                self.p["v_max"], self.p["w_max"], dt)
-        final, clamped2 = project({s: self.arms[s].pos for s in goals}, self.ws_cfg,
-                                  self.waist.pitch_rotation, fixed)
-        self.clamped = set(clamped) | set(clamped2)
-        for s in goals:
-            # Re-projection may push a point out of the inner sphere by more than one step.
-            self.arms[s].pos = limit_step(starts[s], final[s], speeds[s] * dt)
+                arm.pos = np.array(goal, dtype=float)
+                arm.quat = gquat if gquat[0] >= 0.0 else -gquat
+        self.clamped = set(clamped)
         self._publish_arms(ft)
         return True
 
@@ -638,24 +661,6 @@ class TeleopNode(Node):
             pos, quat = matrix_to_pose(to_base(ft, arm.pos, quat_to_matrix(arm.quat)))
             self._publish_pose(ARM_MODULES[s], pos, quat)
 
-    def _error_rate(self):
-        """Feed per-arm tracking error from each new state snapshot; only jumps (its derivative) trip."""
-        stamp = self.kstate.get("snapshot_stamp") if self.kstate else None
-        if stamp is None or stamp == self._err_stamp:
-            return None
-        self._err_stamp = stamp
-        mods = self.kstate.get("modules", {})
-        for s in SIDES:
-            if self.arms[s].mode != ACTIVE:
-                continue
-            out = mods.get(ARM_MODULES[s], {}).get("outputs", {})
-            pe, oe = out.get("position_error"), out.get("orientation_error")
-            if pe is None or oe is None:
-                continue
-            if self.err_monitor[s].update(float(stamp), float(pe), float(oe)):
-                return f"{s}臂跟踪误差突变"
-        return None
-
     def _chassis(self, vx, vy, wz, fh, dt, now):
         """Stick has priority; else headset pose (chassis axis, both arms active, chassis mode); else zero Twist."""
         if self.cmd_vel_pub is None:
@@ -664,15 +669,23 @@ class TeleopNode(Node):
         cmd = np.clip([vx, vy, wz], lim.lower, lim.upper)
         if np.any(cmd != 0.0):
             self.stick_was_active = True
+            self.stick_settle.reset(now)
             self._publish_twist(cmd, now)
             return
         if self.stick_was_active:
+            fb = self.fb.get("chassis")
+            if not self.stick_settle.update(planar(fb) if fb is not None else None, now):
+                self._publish_twist((0.0, 0.0, 0.0), now)   # let the base coast to a stop first
+                return
             self.stick_was_active = False
             self._record_chassis(fh)
         if (self.dual_active and self.body_mode == "chassis" and self.chassis_pose_pub is not None
                 and self.chassis.ref is not None):
             fb = self.fb.get("chassis")
             x, y, yaw = self.chassis.update(fh, dt, planar(fb) if fb is not None else None)
+            if self.chassis.fault:
+                self._disable(self.chassis.fault)
+                return
             msg = self._stamped(PoseStamped, self.profile.chassis_pose_frame)
             msg.pose.position.x, msg.pose.position.y = float(x), float(y)
             msg.pose.orientation.w, msg.pose.orientation.z = math.cos(yaw / 2.0), math.sin(yaw / 2.0)
@@ -731,6 +744,7 @@ class TeleopNode(Node):
             "body_mode": self.body_mode,
             "stick_axis": self.stick_axis,
             "arm_faults": self.arm_faults,
+            "catch_aborts": self.catch_aborts,
             "clamped": sorted(self.clamped),
             "reason": self.reason,
             "warnings": self.warnings,

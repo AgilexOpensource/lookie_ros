@@ -10,12 +10,13 @@ import pytest
 from lookie_teleop import calibration, safety
 from lookie_teleop.buttons import DoubleTapHold, Hysteresis, LongPress, ShortLongPress
 from lookie_teleop.catchup import CatchUp, step_toward
-from lookie_teleop.frames import Mount, heading_frame, invert, rpy_to_matrix
+from lookie_teleop.frames import Mount, heading_frame, invert, rpy_to_matrix, wrap_angle
 from lookie_teleop.home import HomeTracker, parse_request_id
-from lookie_teleop.mapping import (ArmMap, Chassis, ChassisConfig, Waist, WaistConfig,
-                                       apply_deadzone, ee_target, to_base)
+from lookie_teleop.mapping import (ArmMap, Chassis, ChassisConfig, Settle, Waist, WaistConfig,
+                                       YAW_LEAD_MAX, _soft_deadband, apply_deadzone, ee_target,
+                                       to_base)
 from lookie_teleop.profile import ALL_AXES, parse_discover
-from lookie_teleop.workspace import WorkspaceConfig, project
+from lookie_teleop.workspace import Workspace, project
 
 FIXTURE = Path(__file__).parent / "fixtures" / "discover_trio.json"
 
@@ -64,8 +65,7 @@ def test_profile_unknown_body_axis_raises():
 
 CAL = calibration.CalibConfig(
     forward=(1.0, 0.0, 0.0), mount_max=math.radians(35), yaw_warn=math.radians(15),
-    x_range=(0.15, 0.7), z_range=(-0.6, 0.3), min_cross=0.1, max_side=0.2, spacing_tol=0.1,
-    rel_ori_warn=math.radians(45))
+    x_range=(0.15, 0.7), z_range=(-0.6, 0.3), min_cross=0.1, max_side=0.2, spacing_tol=0.1)
 EYE_C = {"left": np.eye(3), "right": np.eye(3)}
 
 
@@ -78,27 +78,59 @@ def calib_inputs(spacing=0.4, headset=None):
 
 
 def test_calibration_accepts_nominal_pose():
-    reason, ref = calibration.check(*calib_inputs(), np.eye(3), EYE_C, CAL)
+    reason, ref = calibration.check(*calib_inputs(), np.eye(3), CAL)
     assert reason is None
     np.testing.assert_allclose(ref.M0, [0.35, 0.0, -0.25], atol=1e-9)
     assert ref.zh0 == pytest.approx(1.4) and ref.warnings == []
 
 
-def test_calibration_rejects_spacing_mismatch():
-    reason, ref = calibration.check(*calib_inputs(spacing=0.7), np.eye(3), EYE_C, CAL)
-    assert ref is None and "间距" in reason
+def test_calibration_anchors_orientation_at_a():
+    # Controllers held with arbitrary grips, arms at their own orientations: at A the mapped
+    # orientation equals each end effector's, and later controller rotations apply on top.
+    headset, ctrl, ee = calib_inputs()
+    ctrl["left"] = ctrl["left"] @ _rot4(rpy_to_matrix(0.4, -1.2, 2.0))
+    ctrl["right"] = ctrl["right"] @ _rot4(rpy_to_matrix(-1.0, 0.3, -0.7))
+    ee["left"] = ee["left"] @ _rot4(rpy_to_matrix(0.0, 1.5, 0.2))
+    ee["right"] = ee["right"] @ _rot4(rpy_to_matrix(0.9, 0.0, -1.1))
+    R = rpy_to_matrix(0.0, 0.0, 0.1)
+    reason, ref = calibration.check(headset, ctrl, ee, R, CAL)
+    assert reason is None
+    fh = ref.mount.heading(headset)
+    amap = ArmMap(ref.M0, ref.m0, R, ref.C)
+    for s in ("left", "right"):
+        _, rot = amap.target(s, fh, ctrl[s])
+        np.testing.assert_allclose(rot, ee[s][:3, :3], atol=1e-9)
+        turn = rpy_to_matrix(0.0, 0.0, 0.3)      # a yaw of the grip in the body heading frame
+        moved = fh @ _rot4(turn) @ invert(fh) @ ctrl[s]
+        moved[:3, 3] = ctrl[s][:3, 3]
+        _, rot2 = amap.target(s, fh, moved)
+        np.testing.assert_allclose(rot2, R @ turn @ R.T @ ee[s][:3, :3], atol=1e-9)
+
+
+def test_calibration_spacing_mismatch_only_warns_and_keeps_hand_spacing():
+    # Hard to judge by eye, so a different hand spacing is accepted; positions still align at the
+    # midpoint, so the arms take the operator's spacing (the catch-up closes the gap).
+    headset, ctrl, ee = calib_inputs(spacing=0.7)
+    reason, ref = calibration.check(headset, ctrl, ee, np.eye(3), CAL)
+    assert reason is None and any("间距" in w for w in ref.warnings)
+    fh = ref.mount.heading(headset)
+    amap = ArmMap(ref.M0, ref.m0, np.eye(3), ref.C)
+    left, _ = amap.target("left", fh, ctrl["left"])
+    right, _ = amap.target("right", fh, ctrl["right"])
+    np.testing.assert_allclose(left - right, [0.0, 0.7, 0.0], atol=1e-9)
+    np.testing.assert_allclose(0.5 * (left + right), [0.35, 0.0, -0.25], atol=1e-9)
 
 
 def test_calibration_rejects_tilted_mount():
     reason, _ = calibration.check(*calib_inputs(headset=pose((0, 0, 1.4), (0.0, 0.9, 0.0))),
-                                  np.eye(3), EYE_C, CAL)
+                                  np.eye(3), CAL)
     assert "倾斜" in reason
 
 
 def test_calibration_rejects_crossed_controllers():
     headset, ctrl, ee = calib_inputs()
     ctrl = {"left": ctrl["right"], "right": ctrl["left"]}
-    reason, _ = calibration.check(headset, ctrl, ee, np.eye(3), EYE_C, CAL)
+    reason, _ = calibration.check(headset, ctrl, ee, np.eye(3), CAL)
     assert "交叉" in reason
 
 
@@ -149,11 +181,37 @@ def test_waist_maps_height_and_lean_with_limits_and_rate():
     assert w.position[2] == pytest.approx(0.9) and w.target[1] == pytest.approx(0.2)
     w.update(1.0, (0.0, 5.0, 0.0))
     assert w.position[2] == pytest.approx(1.0 + cfg.z_range[0])
-    assert w.target[1] == pytest.approx(cfg.pitch_range[1])
+    assert w.target[1] == pytest.approx(cfg.pitch_limits[1])
     slow = Waist([0.0, 0.0, 1.0], 0.0, 0.0, WaistConfig(z_rate=0.1), ALL_AXES)
     slow.set_body_reference(1.4, 0.0)
     slow.update(0.1, (1.2, 0.0, 0.0))
     assert slow.position[2] == pytest.approx(0.99)
+
+
+def test_waist_maps_forward_displacement_relative_unlimited_with_rate():
+    cfg = WaistConfig(x_rate=10.0, z_rate=10.0, pitch_rate=10.0, yaw_rate=10.0)
+    w = Waist([0.05, 0.0, 1.0], 0.0, 0.0, cfg, ALL_AXES)
+    w.set_body_reference(1.4, 0.0)
+    w.update(1.0, (1.4, 0.0, 0.0, 0.08))
+    assert w.position[0] == pytest.approx(0.13)
+    w.update(1.0, (1.4, 0.0, 0.0, 1.0))
+    assert w.position[0] == pytest.approx(1.05)    # x is not range-limited
+    w.update(1.0, (1.4, 0.0, 0.0, -1.0))
+    assert w.position[0] == pytest.approx(-0.95)
+    # Re-referenced at dual activation: the displacement counts from there.
+    w.update(1.0, (1.4, 0.0, 0.0, 0.1))
+    w.record_x_reference()
+    w.update(1.0, (1.4, 0.0, 0.0, 0.03))
+    assert w.position[0] == pytest.approx(0.18)
+    held = w.position[0]
+    w.update(1.0, None)
+    assert w.position[0] == pytest.approx(held)
+    slow = Waist([0.0, 0.0, 1.0], 0.0, 0.0, WaistConfig(x_rate=0.1), ALL_AXES)
+    slow.update(0.1, (1.4, 0.0, 0.0, 0.2))
+    assert slow.position[0] == pytest.approx(0.01)
+    pitch_only = Waist([0.0, 0.0, 1.0], 0.0, 0.0, WaistConfig(x_rate=10.0), frozenset({"waist_pitch"}))
+    pitch_only.update(1.0, (1.4, 0.0, 0.0, 0.1))
+    assert pitch_only.position[0] == pytest.approx(0.0)
 
 
 def test_waist_neo_only_pitch():
@@ -172,6 +230,33 @@ def test_waist_stick_offset_survives_hold():
     assert w.position[2] == pytest.approx(0.95)
 
 
+def test_waist_headset_and_stick_share_the_home_range():
+    cfg = WaistConfig(z_rate=10, z_range=(-0.3, 0.1))
+    w = Waist([0.0, 0.0, 1.0], 0.0, 0.0, cfg, ALL_AXES)
+    w.set_body_reference(1.0, 0.0)           # seated at A
+    w.add_offset("z", -0.2)
+    w.update(1.0, None)
+    assert w.position[2] == pytest.approx(0.8)
+    w.update(1.0, (1.5, 0.0, 0.0))           # stands up: the headset reaches home + 0.1 despite the offset
+    assert w.position[2] == pytest.approx(1.1)
+    w.add_offset("z", 0.05)                  # and the stick cannot go beyond it
+    w.update(1.0, (1.5, 0.0, 0.0))
+    assert w.position[2] == pytest.approx(1.1)
+    w.update(1.0, (1.25, 0.0, 0.0))          # sitting back down acts at once
+    assert w.position[2] < 1.1
+
+
+def test_waist_chassis_mode_follows_only_height_and_lean():
+    cfg = WaistConfig(x_rate=10, z_rate=10, pitch_rate=10, yaw_rate=10)
+    w = Waist([0.0, 0.0, 1.0], 0.0, 0.0, cfg, ALL_AXES)
+    w.set_body_reference(1.4, 0.0)
+    w.record_yaw_reference(0.0)
+    w.record_x_reference()
+    w.update(1.0, (1.3, 0.2, 0.5, 0.3), frozenset({"waist_z", "waist_pitch"}))
+    assert w.position[0] == pytest.approx(0.0) and w.target[2] == pytest.approx(0.0)   # x, yaw held
+    assert w.position[2] == pytest.approx(0.9) and w.target[1] == pytest.approx(0.2)
+
+
 def test_waist_stick_z_moves_arms_pitch_does_not():
     w = Waist([0.0, 0.0, 1.0], 0.0, 0.0, WaistConfig(z_rate=10, pitch_rate=10), ALL_AXES)
     held = [0.4, 0.2, -0.2]                  # arm target held in F_t
@@ -187,7 +272,7 @@ def test_waist_stick_z_moves_arms_pitch_does_not():
 
 
 def test_waist_pitch_hard_limits_and_stick_no_windup():
-    cfg = WaistConfig(pitch_range=(-2.0, 2.0), pitch_rate=100.0)
+    cfg = WaistConfig(pitch_rate=100.0, yaw_rate=100.0)
     w = Waist([0.0, 0.0, 1.0], 0.0, 0.0, cfg, ALL_AXES)
     w.set_body_reference(1.4, 0.0)
     w.update(1.0, (1.4, 2.0, 0.0))                       # headset beyond 90° forward
@@ -199,7 +284,24 @@ def test_waist_pitch_hard_limits_and_stick_no_windup():
     w.update(1.0, (1.4, math.pi / 2, 0.0))
     assert w.target[1] == pytest.approx(math.pi / 2 - 0.1)   # reversing acts immediately
     w.update(1.0, (1.4, -2.0, 0.0))
-    assert w.target[1] == pytest.approx(-math.pi / 4)
+    assert w.target[1] == pytest.approx(-math.pi / 6)   # back 30°
+    w.record_yaw_reference(0.0)
+    w.update(1.0, (1.4, 0.0, 1.5))                       # yaw has no range around A, only the joint limit
+    assert w.target[2] == pytest.approx(1.5)
+
+
+def test_waist_yaw_unwrapped_and_held_at_joint_limit():
+    cfg = WaistConfig(yaw_rate=100.0)
+    w = Waist([0.0, 0.0, 1.0], 0.0, 0.0, cfg, ALL_AXES)
+    w.record_yaw_reference(0.0)
+    for deg in range(0, 271, 10):                        # operator turns left past 180°
+        w.update(0.02, (0.0, 0.0, wrap_angle(math.radians(deg))))
+        assert w.target[2] == pytest.approx(min(math.radians(deg), cfg.yaw_limits[1]))
+    for deg in range(270, 99, -10):                      # turning back: held until inside the range again
+        w.update(0.02, (0.0, 0.0, wrap_angle(math.radians(deg))))
+    assert w.target[2] == pytest.approx(cfg.yaw_limits[1])
+    w.update(0.02, (0.0, 0.0, math.radians(45.0)))
+    assert w.target[2] == pytest.approx(math.radians(45.0))
 
 
 def test_waist_reengage_realigns_z_pitch_and_rereferences_yaw():
@@ -216,7 +318,7 @@ def test_waist_reengage_realigns_z_pitch_and_rereferences_yaw():
 
 
 def test_chassis_follows_body_translation_in_world():
-    ch = Chassis(ChassisConfig(deadband_pos=0.0, deadband_ang=0.0, v_max=10, w_max=10))
+    ch = Chassis(ChassisConfig(deadband_pos=0.0, deadband_ang=0.0, vx_max=10, vy_max=10, w_max=10))
     fh0 = heading_frame([0.0, 0.0, 1.4], 0.0)
     ch.record([1.0, 2.0, math.pi / 2], fh0)
     target = ch.update(heading_frame([0.5, 0.0, 1.4], 0.2), 1.0)
@@ -224,21 +326,93 @@ def test_chassis_follows_body_translation_in_world():
 
 
 def test_chassis_deadband_and_rate_limit():
-    ch = Chassis(ChassisConfig(deadband_pos=0.02, v_max=0.5))
+    ch = Chassis(ChassisConfig(deadband_pos=0.02, vx_max=0.5))
     fh0 = heading_frame([0, 0, 0], 0.0)
     ch.record([0.0, 0.0, 0.0], fh0)
-    np.testing.assert_allclose(ch.update(heading_frame([0.01, 0, 0], 0.0), 0.02), [0, 0, 0])
-    assert ch.update(heading_frame([2.0, 0, 0], 0.0), 0.02)[0] == pytest.approx(0.01)
+    np.testing.assert_allclose(ch.update(heading_frame([0.01, 0, 0], 0.0), 0.02), [0.00125, 0, 0], atol=1e-12)
+    assert ch.update(heading_frame([2.0, 0, 0], 0.0), 0.02)[0] == pytest.approx(0.00125 + 0.01)   # vx_max * dt
 
 
-def test_chassis_target_clamped_to_feedback_deviation():
-    ch = Chassis(ChassisConfig(deadband_pos=0.0, deadband_ang=0.0, v_max=10, w_max=10,
-                               max_dev_pos=0.2, max_dev_ang=math.radians(15)))
+def test_chassis_rate_limit_is_per_body_axis():
+    ch = Chassis(ChassisConfig(deadband_pos=0.0, deadband_ang=0.0, vx_max=1.0, vy_max=0.5))
+    ch.record([0.0, 0.0, math.pi / 2], heading_frame([0, 0, 0], 0.0))
+    # Base faces world +y: operator steps forward/left in its own frame -> body x / body y limits.
+    assert ch.update(heading_frame([5.0, 0, 0], 0.0), 0.1)[:2] == pytest.approx([0.0, 0.1])
+    ch.record([0.0, 0.0, math.pi / 2], heading_frame([0, 0, 0], 0.0))
+    assert ch.update(heading_frame([0, 5.0, 0], 0.0), 0.1)[:2] == pytest.approx([-0.05, 0.0])
+
+
+def test_chassis_deadband_is_smooth_at_its_edge():
+    # Crossing the band must not switch the target from standstill to full speed (stop-go near zero).
+    band = 0.02
+    xs = np.linspace(0.0, 0.08, 801)
+    ys = np.array([_soft_deadband(np.array([x, 0.0]), band)[0] for x in xs])
+    slope = np.diff(ys) / np.diff(xs)
+    assert ys[0] == 0.0 and np.all(np.diff(slope) >= -1e-9) and np.max(np.abs(np.diff(slope))) < 0.02
+    assert _soft_deadband(np.array([0.05, 0.0]), band)[0] == pytest.approx(0.03)   # unchanged far out
+
+
+def test_chassis_target_ignores_a_lagging_base():
+    ch = Chassis(ChassisConfig(deadband_pos=0.0, deadband_ang=0.0, vx_max=10, vy_max=10, w_max=10))
     ch.record([0.0, 0.0, 0.0], heading_frame([0, 0, 0], 0.0))
     t = ch.update(heading_frame([1.0, 0, 0], 1.0), 1.0, feedback=[0.1, 0.0, 0.0])   # base lags
-    np.testing.assert_allclose(t, [0.3, 0.0, math.radians(15)], atol=1e-9)        # chased at the limit
-    t = ch.update(heading_frame([1.0, 0, 0], 1.0), 1.0, feedback=[0.9, 0.0, 0.95])
-    np.testing.assert_allclose(t, [1.0, 0.0, 1.0], atol=1e-9)                      # inside: unclamped
+    np.testing.assert_allclose(t, [1.0, 0.0, 1.0], atol=1e-9)                      # no clamp to feedback
+
+
+def test_chassis_faults_when_base_runs_away_from_target():
+    # Reversed lateral axis: the target barely moves and the base keeps moving the other way; this
+    # must fault instead of chasing forever.
+    ch = Chassis(ChassisConfig(deadband_pos=0.0, deadband_ang=0.0))
+    fh = heading_frame([0, 0, 0], 0.0)
+    ch.record([0.0, 0.0, 0.0], fh)
+    fb, dt, t = np.zeros(3), 0.02, 0.0
+    while ch.fault is None and t < 3.0:
+        ch.update(heading_frame([0.0, 0.01, 0], 0.0), dt, feedback=fb.copy())
+        fb[1] -= 0.35 * dt
+        t += dt
+    assert ch.fault is not None and 1.8 < t < 2.5
+
+
+def test_chassis_yaw_keeps_its_direction_past_180_degrees():
+    # Operator turns a full circle quickly; the base lags behind. Neither the desired turn nor the
+    # chased target may flip sign once more than 180° ahead (the base turned back and faulted).
+    ch = Chassis(ChassisConfig(deadband_pos=0.0, deadband_ang=0.0, w_max=10))
+    ch.record([0.0, 0.0, 0.0], heading_frame([0, 0, 0], 0.0))
+    fb, dt, lead = np.zeros(3), 0.02, 0.0
+    for i in range(1, 151):
+        yaw = -math.radians(360.0) * min(1.0, i / 50)
+        target = ch.update(heading_frame([0, 0, 0], yaw), dt, feedback=fb.copy())
+        assert wrap_angle(target[2] - fb[2]) <= 1e-9          # always asks to keep turning negative
+        lead = max(lead, abs(wrap_angle(target[2] - fb[2])))
+        fb[2] = wrap_angle(fb[2] - 0.6 * dt)
+    assert ch.fault is None
+    assert lead == pytest.approx(YAW_LEAD_MAX)                 # the base fell far behind; lead capped
+
+
+def test_chassis_lagging_base_moving_toward_target_does_not_fault():
+    ch = Chassis(ChassisConfig(deadband_pos=0.0, deadband_ang=0.0, vx_max=10, vy_max=10))
+    ch.record([0.0, 0.0, 0.0], heading_frame([0, 0, 0], 0.0))
+    fb, dt = np.zeros(3), 0.02
+    for _ in range(200):                      # operator 1 m ahead, base creeping after it
+        ch.update(heading_frame([1.0, 0, 0], 0.0), dt, feedback=fb.copy())
+        fb[0] += 0.2 * dt
+    assert ch.fault is None
+    ch.record([0.0, 0.0, 0.0], heading_frame([0, 0, 0], 0.0))
+    assert ch.fault is None
+
+
+def test_settle_waits_for_the_base_to_stop_after_stick_release():
+    s = Settle(pos_tol=0.005, ang_tol=math.radians(0.5), hold_s=0.3, timeout_s=2.0)
+    s.reset(0.0)
+    t, x, v = 0.0, 0.0, 0.3
+    while not s.update([x, 0.0, 0.0], t):    # coasting: delay then decelerating at 0.6 m/s^2
+        t += 0.02
+        if t > 0.2:
+            v = max(0.0, v - 0.6 * 0.02)
+        x += v * 0.02
+    assert v == 0.0 and 0.9 < t < 1.3        # stopped (~0.7 s) + held 0.3 s
+    s.reset(10.0)
+    assert not s.update(None, 11.9) and s.update(None, 12.0)   # no feedback: timeout
 
 
 def test_ee_target_and_deadzone():
@@ -256,81 +430,27 @@ def test_to_base_composes_torso_frame():
 
 # --- workspace -------------------------------------------------------------------------------
 
-WS = WorkspaceConfig(shoulder_offsets={"left": [0, 0.2, 0.05], "right": [0, -0.2, 0.05]})
+WS = Workspace.from_home([0.3, 0.2, 0.0], [0.3, -0.2, 0.0])   # cube centre (0.3, 0, 0), half-size 0.4
 
 
-def test_workspace_passes_reachable_targets():
-    t = {"left": np.array([0.4, 0.2, 0.0]), "right": np.array([0.4, -0.2, 0.0])}
-    out, clamped = project(t, WS, np.eye(3))
+def test_workspace_from_home_points():
+    np.testing.assert_allclose(WS.center, [0.3, 0.0, 0.0])
+    assert WS.half == pytest.approx(0.4)
+
+
+def test_workspace_passes_targets_inside_and_across_the_midline():
+    t = {"left": np.array([0.5, -0.15, 0.2]), "right": np.array([0.2, 0.3, -0.3])}
+    out, clamped = project(t, WS)
     assert clamped == set()
     np.testing.assert_allclose(out["left"], t["left"])
+    np.testing.assert_allclose(out["right"], t["right"])
 
 
-def test_workspace_clamps_reach_and_crossing():
-    out, clamped = project({"left": np.array([2.0, 0.2, 0.0]), "right": np.array([0.4, 0.3, 0.0])},
-                           WS, np.eye(3))
+def test_workspace_clamps_each_arm_on_its_own():
+    out, clamped = project({"left": np.array([0.3, 0.9, 0.0]), "right": np.array([1.0, -0.1, -0.6])}, WS)
     assert clamped == {"left", "right"}
-    assert np.linalg.norm(out["left"] - [0, 0.2, 0.05]) <= WS.r_max + 1e-6
-    assert out["left"][1] - out["right"][1] >= WS.min_hand_gap - 1e-6
-
-
-def test_workspace_fixed_arm_bounds_moving_arm():
-    out, _ = project({"left": np.array([0.4, -0.15, 0.0])}, WS, np.eye(3),
-                     {"right": np.array([0.4, -0.1, 0.0])})
-    assert out["left"][1] >= -0.1 + WS.min_hand_gap - 1e-6
-
-
-def test_workspace_inner_exclusion_continuous_over_frames():
-    s = np.array(WS.shoulder_offsets["left"], dtype=float)
-    a, b = s + [0, 1e-8, 0], s - [0, 1e-8, 0]
-    # Without state the push-out direction d/|d| flips for inputs 2e-8 m apart.
-    jump = project({"left": a}, WS, np.eye(3))[0]["left"] - project({"left": b}, WS, np.eye(3))[0]["left"]
-    assert np.linalg.norm(jump) > 0.3
-    prev, steps = None, []
-    for f in range(100):
-        out, _ = project({"left": a if f % 2 else b}, WS, np.eye(3), prev={"left": prev})
-        if prev is not None:
-            steps.append(np.linalg.norm(out["left"] - prev))
-        prev = out["left"]
-    assert max(steps) < 0.03
-    assert max(steps[-10:]) < 1e-6
-    pa = project({"left": a}, WS, np.eye(3), prev={"left": prev})[0]["left"]
-    pb = project({"left": b}, WS, np.eye(3), prev={"left": prev})[0]["left"]
-    assert np.linalg.norm(pa - pb) < 1e-6
-
-
-def _ws_violation(out, rot, fixed):
-    worst = 0.0
-    for side, e in out.items():
-        n = np.linalg.norm(e - rot @ np.asarray(WS.shoulder_offsets[side], dtype=float))
-        mid = -WS.midline_delta - e[1] if side == "left" else e[1] - WS.midline_delta
-        worst = max(worst, WS.r_min - n, n - WS.r_max, WS.x_min - e[0],
-                    WS.z_range[0] - e[2], e[2] - WS.z_range[1], mid)
-    both = {**fixed, **out}
-    if len(both) == 2:
-        worst = max(worst, WS.min_hand_gap - (both["left"][1] - both["right"][1]))
-    return worst
-
-
-def test_workspace_repeated_projection_stays_feasible():
-    rng = np.random.default_rng(0)
-    for k in range(500):
-        pitch = rng.uniform(-0.5, 0.5)
-        c, sn = math.cos(pitch), math.sin(pitch)
-        rot = np.array([[c, 0, sn], [0, 1, 0], [-sn, 0, c]])
-        shoulders = {s: rot @ np.asarray(WS.shoulder_offsets[s], dtype=float) for s in ("left", "right")}
-        scale = 1e-6 if k % 4 == 0 else 1.0
-        targets = {s: shoulders[s] + rng.uniform(-0.3, 0.3, 3) * scale for s in shoulders}
-        fixed = {}
-        if k % 3 == 0:
-            fixed = {"right": np.array([0.3, rng.uniform(-0.4, 0.0), 0.0])}
-            del targets["right"]
-        out, _ = project(targets, WS, rot, fixed)
-        for _ in range(3):
-            again, clamped = project(out, WS, rot, fixed, prev=out)
-            assert _ws_violation(again, rot, fixed) <= 1e-6
-            assert clamped == set()
-            out = again
+    np.testing.assert_allclose(out["left"], [0.3, 0.4, 0.0])     # half the home distance past the left home point
+    np.testing.assert_allclose(out["right"], [0.7, -0.1, -0.4])
 
 
 # --- catch-up --------------------------------------------------------------------------------
@@ -357,29 +477,75 @@ def test_catchup_converges_and_times_out():
     assert cu.step(np.zeros(3), Q0, goal, Q0, 0.02, 0.1, (1.0, 0))[2] == "手柄动作过快"
 
 
-def test_catchup_from_inside_inner_sphere_stays_rate_limited():
+def test_workspace_clamps_after_engage_until_the_target_is_first_inside():
     from types import SimpleNamespace
     node = pytest.importorskip("lookie_teleop.node")
-    shoulder = np.array([0.0, 0.2005, 0.05])
-    arm = node.Arm(shoulder + [0.1, 0, 0], Q0.copy())
+    arm = node.Arm(np.array([0.3, 0.2, 0.0]), Q0.copy())
     arm.mode, arm.catch = node.CATCHING, CatchUp(0.15, 0.8, 0.02, 0.09, 5.0, 0.8, 3.0)
     arm.catch.start(0.0)
-    other = node.Arm(np.array([0.4, -0.2005, 0.05]), Q0.copy())
+    goal = np.array([0.3, 0.9, 0.0])
+    other = node.Arm(np.array([0.3, -0.2, 0.0]), Q0.copy())
     published = []
     fake = SimpleNamespace(
-        waist=SimpleNamespace(frame=lambda: np.eye(4), pitch_rotation=np.eye(3)),
+        waist=SimpleNamespace(frame=lambda: np.eye(4)),
         arms={"left": arm, "right": other}, fb={},
-        arm_map=SimpleNamespace(target=lambda *a: (shoulder + [0.2, 0, 0], np.eye(3))),
-        _controller=lambda s: None, err_monitor={"left": SimpleNamespace(reset=lambda: None)}, p={"v_max": 1.0, "w_max": 3.0}, ctrl_speed={"left": (0.0, 0.0)},
-        ws_cfg=WorkspaceConfig({"left": shoulder.tolist(), "right": [0, -0.2005, 0.05]}),
-        _disable=lambda reason: pytest.fail(reason), _publish_arms=lambda ft: published.append(arm.pos.copy()))
+        arm_map=SimpleNamespace(target=lambda *a: (goal.copy(), np.eye(3))),
+        _controller=lambda s: None, p={}, ctrl_speed={"left": (0.0, 0.0)},
+        ws=WS, _disable=lambda reason: pytest.fail(reason), _publish_arms=lambda ft: published.append(arm.pos.copy()))
     prev, t = arm.pos.copy(), 0.0
-    while arm.mode == node.CATCHING and t < 2.0:
+    while arm.mode == node.CATCHING and t < 3.0:
         t += 0.01
         assert node.TeleopNode._arms(fake, t, 0.01, np.eye(4))
         assert np.linalg.norm(published[-1] - prev) <= 0.15 * 0.01 + 1e-12
         prev = published[-1]
-    assert arm.mode == node.ACTIVE
+    assert arm.mode == node.ACTIVE and fake.clamped == {"left"}
+    np.testing.assert_allclose(arm.pos, [0.3, 0.4, 0.0], atol=0.021)
+    goal[:] = [0.3, 0.3, 0.0]   # back inside: the clamp is released for this engage
+    for _ in range(20):
+        t += 0.01
+        assert node.TeleopNode._arms(fake, t, 0.01, np.eye(4))
+    assert not arm.bounded and fake.clamped == set()
+    goal[:] = [0.3, 0.6, 0.0]   # outside again: no longer clamped
+    for _ in range(60):
+        t += 0.01
+        assert node.TeleopNode._arms(fake, t, 0.01, np.eye(4))
+    np.testing.assert_allclose(arm.pos, [0.3, 0.6, 0.0], atol=1e-9)
+    assert node.Arm().bounded   # a new engage clamps again
+
+
+def test_failed_catch_up_stops_only_that_arm_until_a_new_double_tap():
+    from types import SimpleNamespace
+    node = pytest.importorskip("lookie_teleop.node")
+    arm = node.Arm(np.array([0.3, 0.2, 0.0]), Q0.copy())
+    arm.mode, arm.catch = node.CATCHING, CatchUp(0.15, 0.8, 0.02, 0.09, 5.0, 0.8, 3.0)
+    arm.catch.start(0.0)
+    other = node.Arm(np.array([0.3, -0.2, 0.0]), Q0.copy())
+    tap = DoubleTapHold(0.4)
+    for pressed, t in ((True, 0.0), (False, 0.1), (True, 0.2)):
+        tap.update(pressed, t)
+    assert tap.engaged
+    published = []
+    fake = SimpleNamespace(
+        waist=SimpleNamespace(frame=lambda: np.eye(4)),
+        arms={"left": arm, "right": other}, fb={},
+        arm_map=SimpleNamespace(target=lambda *a: (np.array([0.3, 0.4, 0.0]), np.eye(3))),
+        _controller=lambda s: None, p={}, ctrl_speed={"left": (0.0, 0.0)}, ws=WS, catch_aborts={},
+        grip_tap={"left": tap}, get_logger=lambda: SimpleNamespace(warn=lambda m: None),
+        _disable=lambda reason: pytest.fail(reason),
+        _publish_arms=lambda ft: published.append(fake.arms["left"].pos.copy()))
+    fake._abort_catch = lambda s, r: node.TeleopNode._abort_catch(fake, s, r)
+    assert node.TeleopNode._arms(fake, 0.01, 0.01, np.eye(4))
+    before = published[-1]
+    fake.ctrl_speed["left"] = (1.0, 0.0)                    # the hand moves fast during the catch-up
+    assert node.TeleopNode._arms(fake, 0.02, 0.01, np.eye(4))
+    held = fake.arms["left"]
+    assert held.mode == node.STOPPED and fake.catch_aborts == {"left": "手柄动作过快"}
+    np.testing.assert_allclose(published[-1], before)       # held where it was, no jump
+    assert fake.arms["right"] is other                      # the other arm is untouched
+    assert not tap.engaged and tap.update(True, 0.3) is None  # the grip still held does not re-engage
+    assert tap.update(False, 0.5) is None                   # releasing it is not a "release" event
+    assert tap.update(True, 0.6) is None and tap.update(False, 0.7) is None
+    assert tap.update(True, 0.8) == "engage"                # a fresh double-tap and hold catches up again
 
 
 # --- safety ----------------------------------------------------------------------------------
@@ -397,6 +563,17 @@ def test_kstone_health():
     stale["fresh"] = False
     assert safety.kstone_health(stale, 0.0, 0.3, False, ["torso_pose"]) is None
     assert safety.kstone_health(stale, 0.0, 0.3, True, ["torso_pose"])
+
+
+def test_kstone_health_ignores_end_effector_groups():
+    groups = [{"name": "left_hand", "fresh": True}, {"name": "right_hand", "fresh": False},
+              {"name": "base", "fresh": True}, {"name": "default", "fresh": True}]
+    hand_lost = {**state(), "fresh": False, "groups": groups}
+    ee = ["left_hand", "right_hand"]
+    assert safety.kstone_health(hand_lost, 0.0, 0.3, True, [], ignore_groups=ee) is None
+    assert "right_hand" in safety.kstone_health(hand_lost, 0.0, 0.3, True, [])
+    body_lost = {**hand_lost, "groups": [*groups[:3], {"name": "default", "fresh": False}]}
+    assert "default" in safety.kstone_health(body_lost, 0.0, 0.3, True, [], ignore_groups=ee)
 
 
 def test_xr_monitor_timeout_jump_and_reach():
@@ -429,18 +606,41 @@ def test_xr_monitor_per_name_issues_and_recenter():
     assert "left" not in mon.issues({"left": pose((5.0, 0, 0))}, {"left": 2.0})
 
 
+def test_xr_monitor_allows_fast_controller_motion_but_not_a_fast_headset():
+    mon = safety.XrMonitor(0.2, 0.1, math.radians(30), 1.0, 6.0, math.radians(1200))
+    h, l = pose((0, 0, 1.4)), pose((0.3, 0.2, 1.2))
+    assert mon.issues({"headset": h, "left": l}, {"headset": 1.0, "left": 1.0}) == {}
+    # a 5 m/s swing over a late 30 ms tick: 15 cm, within 0.10 + 6 * 0.03
+    assert mon.issues({"left": pose((0.45, 0.2, 1.2))}, {"left": 1.03}) == {}
+    # a 1500 deg/s wrist flick over 30 ms: 45 deg, within 30 + 1200 * 0.03
+    flick = pose((0.45, 0.2, 1.2), (math.radians(45), 0.0, 0.0))
+    assert mon.issues({"left": flick}, {"left": 1.06}) == {}
+    # a tracking snap of 30 cm within 20 ms is still a jump
+    assert "位置跳变" in mon.issues({"left": pose((0.75, 0.2, 1.2))}, {"left": 1.08})["left"]
+    # the headset gets no allowance (a recenter is still caught)
+    assert "位置跳变" in mon.issues({"headset": pose((0.15, 0, 1.4))}, {"headset": 1.03})["headset"]
+    # after a 0.4 s gap the allowance is capped at 0.1 s: 0.10 + 6 * 0.1 = 0.7 m
+    mon.reset()
+    assert mon.issues({"left": l}, {"left": 2.0}) == {}
+    assert "位置跳变" in mon.issues({"left": pose((1.1, 0.2, 1.2))}, {"left": 2.4})["left"]
+
+
+def test_headset_timeout_stops_both_arms_instead_of_disabling():
+    from types import SimpleNamespace
+    node = pytest.importorskip("lookie_teleop.node")
+    mon = safety.XrMonitor(0.5, 0.1, math.radians(30), 1.0, 6.0, math.radians(1200))
+    h, l, r = pose((0, 0, 1.4)), pose((0.3, 0.2, 1.2)), pose((0.3, -0.2, 1.2))
+    fake = SimpleNamespace(xr_monitor=mon, xr={"headset": (h, 1.0, 1.0), "left": (l, 1.6, 1.6), "right": (r, 1.6, 1.6)})
+    issues = node.TeleopNode._xr_issues(fake, object(), object(), 1.6)
+    assert issues == {"left": "XR headset 数据超时", "right": "XR headset 数据超时"}
+    fake.xr["headset"] = (h, 1.6, 1.6)
+    assert node.TeleopNode._xr_issues(fake, object(), object(), 1.62) == {}   # recovered: no spurious jump
+    fake.xr["headset"] = (pose((0.5, 0.3, 1.4)), 1.62, 1.62)                 # a recenter still disables
+    assert "headset" in node.TeleopNode._xr_issues(fake, object(), object(), 1.63)
+
+
 def mon_check_first(issues):
     return issues.get("headset") or next(iter(issues.values()))
-
-
-def test_error_rate_monitor_ignores_constant_error_flags_jumps():
-    mon = safety.ErrorRateMonitor(1.0, 6.0, 3, 10.0)
-    assert not any(mon.update(i * 0.02, 0.2, 0.3) for i in range(50))
-    mon.reset()
-    tripped = False
-    for i in range(20):
-        tripped |= mon.update(i * 0.02, 0.1 * i, 0.0)   # 5 m/s growth
-    assert tripped
 
 
 # --- home ------------------------------------------------------------------------------------

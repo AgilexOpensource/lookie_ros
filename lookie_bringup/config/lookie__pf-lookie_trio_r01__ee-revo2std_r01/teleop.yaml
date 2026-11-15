@@ -1,8 +1,8 @@
 # lookie_teleop overrides for lookie__pf-lookie_trio_r01__ee-revo2std_r01 (loaded after common.yaml).
-# omni chassis: headset drives chassis pose and waist z/pitch/yaw.
+# omni chassis: headset drives chassis pose and waist x/z/pitch/yaw.
 /**/lookie_teleop:
   ros__parameters:
-    body_axes: [chassis, waist_z, waist_pitch, waist_yaw]
+    body_axes: [chassis, waist_x, waist_z, waist_pitch, waist_yaw]
 
     # Revo2 dexterous hands: main trigger 0 -> ee_open, 1 -> ee_close (linear).
     # Joint names and limits come from kstone discover unless ee_joints_* / ee_lower / ee_upper are set.

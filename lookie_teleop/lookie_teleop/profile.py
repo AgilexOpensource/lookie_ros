@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-ALL_AXES = frozenset({"chassis", "waist_z", "waist_pitch", "waist_yaw"})
+ALL_AXES = frozenset({"chassis", "waist_x", "waist_z", "waist_pitch", "waist_yaw"})
 # Headset pose-following of the chassis needs lateral motion (vx, vy, wz).
 HOLONOMIC = frozenset({"omni"})
 

@@ -34,7 +34,7 @@ flowchart LR
         BTN["按键解析<br/>长按/双击按住"]
         SM["状态机"]
         MAP["映射<br/>臂/腰/底盘/手"]
-        CLP["边界投影 + 平滑追赶"]
+        CLP["工作空间钳制 + 平滑追赶"]
         OUT["输出层"]
     end
     subgraph KS["kstone_ros (/kstone)"]
@@ -74,11 +74,9 @@ flowchart LR
 | 字段 | 用途 |
 |---|---|
 | `fault`（非空即故障，锁存）、`fresh` | 运控健康检查（§7.2、§12） |
-| `snapshot_stamp` | 区分新旧快照，跟踪误差每个快照只采样一次 |
 | `outcomes[]` `{request_id, applied, error}` | 服务请求结果；`applied=true` 才算受理（§11） |
 | `modules.M.enabled` / `held_by` | 所需模块已使能；`held_by=null` 表示模块自身持有控制权 |
 | `modules.M.home_state` | `idle` / `waiting` / `executing` / `succeeded` / `timed_out` / `aborted`（§11） |
-| `modules.{left,right}_arm_pose.outputs.position_error` / `orientation_error` | 跟踪误差，用于误差跳变检测（§12） |
 
 > `/kstone/state` 的超时按本节点接收时刻判定（`kstone_timeout_s`）。
 
@@ -113,11 +111,12 @@ flowchart LR
 
 ## 3. 机型 Profile
 
-节点内不写机型名。参数 `body_axes`（默认全部：`chassis` / `waist_z` / `waist_pitch` / `waist_yaw`）列出头盔可驱动的轴，再与 discover 求交：`chassis` 模块的 `chassis_kinematics` 不是全向（`omni`）时自动去掉 `chassis` 轴，摇杆 vy 置 0；摇杆速度再按 discover 中底盘 `velocity` 端口的上下限裁剪。各机型的 `body_axes` 在 bringup 配置里给出（`lookie_bringup/config/<model>/teleop.yaml`），下表为两种机型的取值效果。
+节点内不写机型名。参数 `body_axes`（默认全部：`chassis` / `waist_x` / `waist_z` / `waist_pitch` / `waist_yaw`）列出头盔可驱动的轴，再与 discover 求交：`chassis` 模块的 `chassis_kinematics` 不是全向（`omni`）时自动去掉 `chassis` 轴，摇杆 vy 置 0；摇杆速度再按 discover 中底盘 `velocity` 端口的上下限裁剪。各机型的 `body_axes` 在 bringup 配置里给出（`lookie_bringup/config/<model>/teleop.yaml`），下表为两种机型的取值效果。
 
 | 能力 | trio（全向 `omni`） | neo（差速 `differential`） |
 |---|---|---|
 | 头盔 → 底盘 | ✅ 平面 x/y/yaw（位姿目标） | ❌ |
+| 头盔 → 腰 x（前后） | ✅ | ❌ |
 | 头盔 → 腰 Z | ✅ | ❌ |
 | 头盔 → 腰 pitch | ✅ | ✅ |
 | 头盔 → 腰 yaw | ✅（腰部模式） | ❌ |
@@ -126,7 +125,7 @@ flowchart LR
 | 右摇杆 x | 底盘转向 | 底盘转向 |
 | 右摇杆 y（X 切换 Z/pitch） | ✅ | ✅（Z 偏置与 pitch 偏置均可调） |
 
-内部用"轴使能集合"表示：trio = `{chassis, waist_z, waist_pitch, waist_yaw}`，neo = `{waist_pitch}`。映射代码只判断轴是否使能，不写机型分支。
+内部用"轴使能集合"表示：trio = `{chassis, waist_x, waist_z, waist_pitch, waist_yaw}`，neo = `{waist_pitch}`。映射代码只判断轴是否使能，不写机型分支。
 
 ---
 
@@ -153,7 +152,7 @@ stateDiagram-v2
 |---|---|---|---|
 | 未就绪 | 仅机械手 | B 长按、主扳机 | 启动态；不知道机器人在哪，必须先回 Home |
 | 回Home | 仅机械手（先停臂/腰/底盘目标发布） | 主扳机 | 等待 kstone 回零完成；其他按键无效 |
-| 已归位 | 仅机械手 | A、B、Y、X、主扳机 | 臂/腰/底盘不发目标 |
+| 已归位 | 机械手；底盘 `cmd_vel`（摇杆，无输入发零速） | A、B、Y、X、主扳机、摇杆（仅底盘） | 臂/腰不发目标，保持 Home 姿态供 A 校准；摇杆只控底盘平移和转向，右摇杆 y（腰偏置）无效 |
 | 已使能 | 是 | 全部（A 忽略） | 含每臂子状态 |
 | 失能 | 仅机械手（臂/腰/底盘保持当前目标） | B 长按、主扳机 | 只停发命令（不调用 enable 服务）；底盘发一次零速后停发；摇杆/侧扳机无效，防误触 |
 
@@ -168,15 +167,15 @@ stateDiagram-v2
     追赶 --> 激活: 收敛
     追赶 --> 停住: 松开侧扳机
     激活 --> 停住: 松开侧扳机
-    追赶 --> 失能: 过快 / 超时
+    追赶 --> 停住: 过快 / 超时（需重新双击）
     追赶 --> 停住: 该侧手柄丢失
     激活 --> 停住: 该侧手柄丢失
 ```
 
 - **停住**：在 $F_t$ 下保持该臂最后目标（使能后首帧取反馈）并持续发布；腰 Z 变化时随腰一起升降，腰 pitch 变化时在底盘系下不动。
 - **追赶**：从当前末端位姿向映射目标插值，见 §9。
-- **激活**：直接发布（经边界投影与限速）的映射目标。
-- **手柄丢失**（该侧 transform / joy 超时、跳变、离头盔过远）：只停该臂（保持目标），不失能；手柄恢复后需重新双击按住侧扳机才再接管，丢失期间的按键被吞掉。头盔丢失则整体失能（§12）。
+- **激活**：直接发布（经工作空间钳制与限速）的映射目标。
+- **手柄丢失**（该侧 transform / joy 超时、跳变、离头盔过远）：只停该臂（保持目标），不失能；手柄恢复后需重新双击按住侧扳机才再接管，丢失期间的按键被吞掉。头盔数据超时则两臂都停住（同样需重新双击，不失能）；头盔跳变 / 时间戳回退则整体失能（§12）。
 - **头盔驱动条件**：两臂都处于 `激活`（不含追赶）。从"非双激活"变为"双激活"的瞬间记为 **双激活时刻**。
 
 ---
@@ -187,7 +186,7 @@ stateDiagram-v2
 |---|---|---|---|
 | B（右 `buttons[4]`） | 长按 ≥ `long_press_s`=1.0 s，按住期间只触发一次 | 除 回Home 外 | 回 Home；清零摇杆腰部偏置 |
 | B 短按 | 按下后 < 1 s 松开（松开沿触发；已触发长按的不再算短按） | 已归位、已使能 | 整体失能（原因"用户停止"）：停遥操、防摇杆误触 |
-| A（右 `buttons[3]`） | 长按 1 s | 已归位 | 校准（§7），通过则 → 已使能 |
+| A（右 `buttons[3]`） | 长按 1 s，只在 已归位 时计时（回Home 中就按住的，Home 完成起再计 1 s，不需要松开重按） | 已归位 | 校准（§7），通过则 → 已使能 |
 | Y（左 `buttons[4]`） | 长按 1 s | 已归位、已使能（trio） | 头盔驱动目标 底盘 ↔ 腰部；默认参数 `default_body_mode` |
 | X（左 `buttons[3]`） | 长按 1 s | 已归位、已使能 | 右摇杆 y 调节 腰Z ↔ 腰pitch（默认 Z）；**无急停** |
 | 侧扳机 `axes[3]` | 按下阈值 0.6 / 释放 0.4（滞回）；两次按下间隔 ≤ `double_tap_s`=0.4 s 且第二次保持按住 | 已使能 | 该臂 停住 → 追赶；松开 → 停住 |
@@ -261,14 +260,13 @@ $$B_t = H_t\,R_{mount}^{-1},\qquad F_h(t)=\big(\mathrm{pos}(B_t),\;R_z(\mathrm{y
 | 检查 | 通过条件 | 失败处理 |
 |---|---|---|
 | 设备 | 头盔和两手柄在线、近 `xr_timeout_s` 内均有 transform | 拒绝 |
-| 运控 | `~/state` 未超时、无 `fault`、`fresh=true`（`require_fresh`，无驱动的纯仿真可关）、所需模块 `enabled` | 拒绝 |
+| 运控 | `~/state` 未超时、无 `fault`、`fresh=true`（`require_fresh`，无驱动的纯仿真可关；末端执行器反馈组 `ee_feedback_groups` 除外）、所需模块 `enabled` | 拒绝 |
 | 挂载角 | $\lvert\theta_m\rvert,\lvert\phi_m\rvert \le 35°$ | 拒绝 |
 | 前后 | $0.15 \le x_i \le 0.70$（手柄在胸前，不在身后/贴身） | 拒绝 |
 | 不交叉 | $y_L - y_R \ge 0.10$ | 拒绝 |
 | 不单侧 | $\lvert (y_L+y_R)/2\rvert \le 0.20$ | 拒绝 |
 | 高度 | $-0.60 \le z_i \le 0.30$ | 拒绝 |
-| 间距 | $\big\lvert\,\lVert p_L-p_R\rVert - \lVert e_L-e_R\rVert\,\big\rvert < 0.10$ | 拒绝 |
-| 相对姿态 | 两手柄相对姿态 与 两末端相对姿态 夹角 > 45° | 仅警告 |
+| 间距 | $\big\lvert\,\lVert p_L-p_R\rVert - \lVert e_L-e_R\rVert\,\big\rvert \ge 0.10$ | 仅警告（目测难以对准；激活后由追赶收敛到手柄间距） |
 | 头盔 yaw | §6.2 偏差 > 15° | 仅警告 |
 
 拒绝时状态保持 已归位，`~/status` 输出第一条失败原因，对应[快速上手 §8](vr_teleop_quickstart.zh-CN.md#8-常见问题)。
@@ -283,49 +281,54 @@ $$B_t = H_t\,R_{mount}^{-1},\qquad F_h(t)=\big(\mathrm{pos}(B_t),\;R_z(\mathrm{y
 $$\mathbf e_i = \mathbf m_0 + R\,(\mathbf p_i - \mathbf M_0),\qquad Q_i = R\,Q^p_i\,C_i$$
 $$X_i^{T} = F_t(t)\cdot(\mathbf e_i, Q_i)$$
 
-- **以中点对齐**：两手相对向量 $\mathbf p_L-\mathbf p_R$ 被 1:1 映射，所以两手间距、相对位置与两末端一致。
-- $C_i$ 是**配置常量**（手柄握持系 → 末端工具系），不在 A 时求解；因此两手柄相对姿态也 1:1 传递。A 时若两末端与两手柄的相对位姿不一致，交给首次激活的平滑追赶。
+- **以中点对齐**：两手相对向量 $\mathbf p_L-\mathbf p_R$ 被 1:1 映射，所以两末端的间距、相对位置与两手柄一致。A 时间距不一致不拒绝：各臂双击激活时由 §9.3 追赶从实测末端平滑移到映射目标。
+- $C_i$ 在 **A 时求解**：$C_i = (R\,Q^p_i(0))^{-1}\,Q^{ee}_i(0)$，即 A 时映射姿态等于当时的末端姿态，之后只传递手柄相对 A 的转动。手柄与手势的握持系定义不同、握法不同都不影响对齐，也不要求 A 时两手柄相对姿态与两末端一致。
 - 臂参考**只在 A 时记录**，之后松开/再按侧扳机都走追赶，不重新标定。
 - **为什么用航向系（只含 yaw）而不是完整 $B_t$**：
   - 人前倾时手相对航向系前移 → 机械臂前伸；
   - 腰部同时跟随 pitch 时，$F_t$ 原点随 `chest_link` 前移，两者一致；
-  - 腰不跟随 pitch 时（trio 底盘模式、单臂激活），前倾仍能让臂前伸，不会"身体动了手臂没反应"。
+  - 腰不跟随 pitch 时（单臂激活），前倾仍能让臂前伸，不会"身体动了手臂没反应"。
 - 发布前转换到 `chassis_base_link`。$F_t(t)$ 使用**躯干目标**（遥操自己维护的值）而非反馈，避免与 WBC 跟踪误差形成回路。
 
-### 8.2 腰部（双激活 且 腰部模式；neo 只有 pitch）
+### 8.2 腰部（双激活；腰部模式跟随全部腰轴，底盘模式只跟随 Z 和 pitch；neo 只有 pitch）
 
+$$x^r_t = x^r_{ref} + k_x\,\big[F_h(ref)^{-1}F_h(t)\big]_x$$
 $$z^r_t = z^r_0 + k_z\,(z^h_t - z^h_0) + \Delta z_{joy}$$
 $$\varphi_t = \varphi_0 + k_\theta\,(\theta_t - \theta_0) + \Delta\varphi_{joy}$$
 $$\psi^r_t = \psi^r_{ref} + (\psi^h_t - \psi^h_{ref})$$
 
 - Z、pitch 是**相对 A 的绝对量**：任何时候身体回到 A 时的姿势，腰部就回到 A 时的高度/俯仰（若 双激活 瞬间不一致，由腰部追赶平滑过去）。
-- yaw 是**相对量**：参考在 §8.4 时刻重记，避免切换模式或二次激活时腰部突转。
+- yaw 是**相对量**：参考在 §8.4 时刻重记，避免切换模式或二次激活时腰部突转。$\psi^h_t - \psi^h_{ref}$ 逐帧展开（不折回 ±180°），人转过 180° 时腰目标不会跳到另一侧。
+- x（前后）也是**相对量**：取头盔在参考航向系下的前向位移，参考在 §8.4 时刻重记，人走动后再双激活不会让腰前冲；x 不限幅。y 不映射。头盔前倾时 pitch 与 x 同时增大，必要时调小 `k_x` 或 `k_pitch`。
 - roll 不映射：躯干没有 roll 自由度，头盔 roll 不需要对齐。
-- 限幅：头盔部分和最终输出（头盔+摇杆）各限一次。Z 按 `waist_z_range`（相对 A）；pitch 取 `waist_pitch_range`（相对 A）与 `waist_pitch_limits_deg`（底盘系绝对，默认后仰 45°、前俯 90°）的交集；yaw 按 `waist_yaw_range`。跟随头盔与摇杆用同一套限幅，保证发给运控的躯干目标始终合理。最后做速度限制。
+- 限幅：只限制摇杆也能调节的两个轴，限的是头盔+摇杆的**总和**（头盔部分按"总和到限"截断，所以无论摇杆偏置多少，头盔和摇杆到达的是同一个极限；头盔映射每帧按绝对量重算，不累积）。Z 按 `waist_z_range`（相对 A 时的躯干，即实机 Home 高度，A 只在 Home 后接受）；pitch 按 `waist_pitch_limits_deg`（底盘系绝对，默认后仰 30°、前俯 90°）。yaw 只按 `waist_yaw_limits_deg` 截断（底盘系绝对，默认 ±89°，在 torso_joint4 ±90° 之内），避免目标转出关节范围后双臂随 $F_t$ 绕到身侧。x 不限幅。最后做速度限制。腰目标不与反馈比较：实机腰先到关节/可达极限时（极限随其他轴变化），目标会继续走，挂在 $F_t$ 上的双臂会随之移动。
 - 摇杆偏置 $\Delta z_{joy}$、$\Delta\varphi_{joy}$ 由右摇杆 y 积分（X 选择轴），在 **任何** 已使能 子状态下有效（含单侧激活），**只在回 Home 时清零**。偏置不积分饱和：输出已到限位时继续推摇杆不累加，反推立即生效。用途：补偿 A 时头盔与腰位姿无法对齐的固定偏差。
   - **Z：腰臂一起升降**。$F_t$ 原点含躯干目标 z，两臂目标（激活或停住）都在 $F_t$ 下表达，腰臂相对高度不变。
-  - **pitch：只调腰**。$F_t$ 只含 yaw，pitch 偏置不改变两臂在底盘系下的目标（仅随肩点影响边界投影）。用途：头盔在佩戴者胸前的 pitch 无法绝对固定，用它校准真人躯干与机器人躯干之间的 pitch 对齐误差。
+  - **pitch：只调腰**。$F_t$ 只含 yaw，pitch 偏置不改变两臂在底盘系下的目标。用途：头盔在佩戴者胸前的 pitch 无法绝对固定，用它校准真人躯干与机器人躯干之间的 pitch 对齐误差。
 - 非双激活时，腰部目标保持最后值（仍叠加摇杆偏置）。
+- 底盘模式（trio）：头盔水平位移和 yaw 驱动底盘（§8.3），腰 x、yaw 保持；Z、pitch 照常按上式跟随头盔（与腰部模式相同，不加死区），边走边蹲、前俯都能带腰。
 
 ### 8.3 底盘（trio、双激活、底盘模式、摇杆无输入）
 
 $$C_t = C_{ref}\;\oplus\;\mathrm{planar}\big(F_h(ref)^{-1}F_h(t)\big)$$
 
-- $\mathrm{planar}(\cdot)$ 取 $(x, y, \mathrm{yaw})$，平移乘 `chassis_scale`（默认 1）。
-- 死区（2 cm / 2°）+ 速度/加速度限幅（不超过 trio 的 0.5 m/s、1.0 rad/s）。
-- 偏差钳位：目标始终钳在底盘反馈 ± `chassis_max_dev_pos`（0.2 m）/ `chassis_max_dev_deg`（15°）内，**不失能**。底盘跟不上时以上限持续追头盔目标，避免误差一下子拉大导致底盘难以受控、积分漂移加剧。
+- $\mathrm{planar}(\cdot)$ 取 $(x, y, \mathrm{yaw})$，平移乘 `chassis_scale`（默认 1）。yaw 相对参考连续展开（不折回 ±180°），期望和目标追赶都在展开后的角度上计算，头盔快速转过 180° 甚至一整圈时，转向不会突然反号。
+- 平滑死区（2 cm / 2°：超过 2 倍死区后输出 = 位移 − 死区；之内按平方过渡，输出和斜率都连续，越过死区边缘时目标不会从静止突然起步）+ 目标速度限幅（按目标朝向的车体轴：`chassis_vx_max` / `chassis_vy_max` 椭圆组合，`chassis_w_max`）。目标不再钳在底盘反馈附近，底盘跟不上时由 kstone 按自身速度/加速度上限追赶。
+- 偏航防折返：目标偏航领先底盘反馈最多 150°。位姿目标的偏航是折回 ±180° 的，kstone 按最短方向转，领先超过 180° 会让底盘反向转；正常跟随时不会触发。
+- 背离保护：与期望位姿的误差超过 0.2 m / 15°、且底盘反馈仍在**远离**期望位姿（远离速度 > 0.05 m/s 或 0.1 rad/s）持续 1.5 s 时失能（操作员快速左右晃动时，滞后的底盘反向运动实测最长约 0.7 s，不应触发）。用于发现底盘轴向反了等情况。底盘被障碍物挡住不动时不算背离，不会失能。
 - 发布到 `chassis/control/pose`（`world_frame`）。
 
 ### 8.4 参考记录时刻
 
 | 参考 | A | 双激活时刻 | Y 切换时刻（已双激活） | 摇杆松开 |
 |---|---|---|---|---|
-| 臂 $M_0, m_0$ | ✅ | — | — | — |
+| 臂 $M_0, m_0, C_i$ | ✅ | — | — | — |
 | 腰 Z / pitch（$z_0,\theta_0$…） | ✅ | — | — | — |
-| 腰 yaw | ✅ | ✅ | ✅ | — |
+| 腰 x、yaw | ✅ | ✅ | ✅ | — |
 | 底盘 $C_{ref}, F_h(ref)$ | ✅ | ✅ | ✅ | ✅ |
 
 > 双激活时刻定义为"头盔控制从停止变为生效的那一刻"：即第二只侧扳机进入激活；若 Y 从腰部切到底盘时两侧已激活，则取 Y 切换那一刻。
+> 摇杆松开后先发零速，等底盘停稳（位姿 0.3 s 内变化 < 5 mm / 0.5°，最多等 2 s）再重记底盘参考、交回头盔。底盘有约 0.2 s 响应延迟并会滑行减速，若在松开瞬间记参考，头盔位姿控制会把摇杆刚走的那段拉回去。
 
 ### 8.5 中途松开、走动后再双激活
 
@@ -333,8 +336,8 @@ $$C_t = C_{ref}\;\oplus\;\mathrm{planar}\big(F_h(ref)^{-1}F_h(t)\big)$$
 |---|---|---|
 | 臂 | 手柄在头盔航向系 $F_h(t)$ 下映射，人整体走动/转身不改变目标；激活时从保持目标平滑追赶到映射目标 | 映射本身就是身体局部的，无需重置 |
 | 腰 Z、pitch | 相对 A 的绝对量，经速度限制平滑对齐到当前身体姿势 | 保持 A 时的高度/俯仰标定；不重置才能对齐 |
-| 腰 yaw | 双激活时刻重记参考（§8.4），从当前值继续 | 人可能大幅转身，若对齐会导致上身相对底盘扭曲或跳变 |
-| 腰 x/y、roll | 不映射，保持 | 无对应自由度或不需要 |
+| 腰 x、yaw | 双激活时刻重记参考（§8.4），从当前值继续 | 人可能大幅转身或走动，若对齐会导致上身相对底盘扭曲或跳变 |
+| 腰 y、roll | 不映射，保持 | 无对应自由度或不需要 |
 | 底盘 | 双激活时刻重记参考 | 人走动的位移不应被底盘复现 |
 
 - 单侧激活期间：腰/底盘停止跟随头盔，摇杆仍可调腰偏置和驱动底盘；激活侧的臂照常跟随。由于臂目标是 $F_h(t)$ 局部量，**人整体往前走不会把臂往前拉**，只有手相对身体的运动（含前倾）才会。
@@ -349,39 +352,36 @@ $$C_t = C_{ref}\;\oplus\;\mathrm{planar}\big(F_h(ref)^{-1}F_h(t)\big)$$
 
 ```mermaid
 flowchart LR
-    A["手柄位姿 h_i"] --> B["F_h 变换<br/>p_i"] --> C["映射<br/>e_i, Q_i"] --> D["边界投影 Π"] --> E["追赶 / 限速"] --> F["再次投影 Π<br/>位移限速"] --> G["→ chassis_base_link<br/>发布"]
+    A["手柄位姿 h_i"] --> B["F_h 变换<br/>p_i"] --> C["映射<br/>e_i, Q_i"] --> D["工作空间钳制 Π"] --> E["追赶 / 限速"] --> G["→ chassis_base_link<br/>发布"]
 ```
 
 ### 9.2 工作空间（在机器人躯干航向系 $F_t$ 下）
 
-| 约束 | 形式 |
-|---|---|
-| 臂展 | $r_{min} \le \lVert \mathbf e_i - \mathbf s_i\rVert \le r_{max}$，$\mathbf s_i$ 为肩点（参数 `shoulder_offsets`，躯干系下左右肩 xyz，随腰 pitch 旋转到 $F_t$） |
-| 不贴身 | $x_i \ge x_{min}$ |
-| 高度 | $z_{min} \le z_i \le z_{max}$ |
-| 不过中线 | 左臂 $y_L \ge -\delta$，右臂 $y_R \le \delta$ |
-| 不交叉 | $y_L - y_R \ge d_{min}$=0.10 |
+臂只有一条位置约束：两臂共用的正方体，左右各限各的，**每次激活后只限到映射目标第一次回到正方体里为止**。不过中线、不交叉、手柄在头盔前方等**只在 A 校准时检查**（§7.2），遥操过程中不再限制，双臂可以过中线；臂与身体之间的防撞由 kstone 自碰撞负责（两只手之间不检测）。
 
-- 投影 $\Pi$：按 球壳 → 半空间 → 不交叉 的顺序依次投影，重复至所有约束误差 ≤ `tol`=1e-6 m（最多 `iterations`=50 轮）。手柄回到范围内约束自然解除，**无需滞回**。
-- 凸性：外球 $\lVert \mathbf d\rVert \le r_{max}$（$\mathbf d = \mathbf e_i - \mathbf s_i$）和各半空间是凸集；内球排除 $\lVert \mathbf d\rVert \ge r_{min}$ 不是凸集，球内的径向方向 $\mathbf d/\lVert \mathbf d\rVert$ 在肩点附近不连续（相距 2e-8 m 的两个输入，投影结果可相距 0.4 m）。
-- 内球连续性：每臂保存上一帧映射目标的投影结果 $\mathbf e^{prev}_i$（激活 / 再激活时清空）。$\lVert \mathbf d\rVert < r_{min}$ 时沿 $\mathbf v = \mathbf d + (r_{min} - \lVert \mathbf d\rVert)\,\mathbf u^{prev}$ 推到内球面，$\mathbf u^{prev}$ 为 $\mathbf e^{prev}_i - \mathbf s_i$ 的单位向量：在肩点处等于上一帧方向，在内球面上等于 $\mathbf d/\lVert \mathbf d\rVert$，所以肩点附近和出入内球面时结果都连续。无上一帧或 $\mathbf v = 0$ 时退回径向方向（$\mathbf d = 0$ 时取 +x）。剩下一处跳变：手沿 $-\mathbf u^{prev}$ 穿过肩点并到达 $\lVert \mathbf d\rVert = r_{min}/2$ 时 $\mathbf v = 0$，方向翻转；球不能连续映射到球面上并保持球面不动，只依赖当前输入和上一帧的投影无法消除它，发布值的连续由后面的追赶 / 限速保证。
-- 再次投影的输入是限速后的发布值，用径向方向，不带上一帧状态。投影后的位移再按本帧速度上限（追赶时 $v_{catch}$，激活后 $v_{max}$）从上一帧发布值限一次，所以发布值每帧最多移动 $v\,dt$。追赶起点在内球里时，发布值会在几帧内平滑推出内球，期间短暂位于内球里。
-- 不交叉约束涉及两臂：
-  - 一臂停住时，另一臂以停住臂的**保持目标**为界单侧推开；
-  - 两臂都激活时，对称各推开一半。
+| 量 | 定义 |
+|---|---|
+| 参考点 $\mathbf c$ | A 时两臂末端反馈在 $F_t(0)$ 下的中点。A 只在回 Home 之后（已归位）接受，所以就是双臂 Home 点连线的中点 |
+| 半边长 $d$ | A 时两臂末端的距离（Home 点连线长度） |
+| 约束 | $\lvert \mathbf e_i - \mathbf c\rvert_k \le d$，$k \in \{x, y, z\}$：边长 $2d$ 的正方体。横向每臂最多到对侧 Home 点之外再 $d/2$，自己一侧到本侧 Home 点之外 $d/2$ |
+
+- **参考点相对躯干固定**：正方体在 $F_t$ 下表达，跟随腰的位置和 yaw（$F_t$ 原点是 `chest_link` 目标），A 之后不再变化；之后松开、再激活侧扳机都用同一个正方体，不重新取点。
+- **何时解除**：每臂各自判断。侧扳机激活（双击按住）后开始钳制；映射目标第一次落在正方体内即解除，此后该臂自由跟随，手柄再伸出正方体也不再钳制；松开侧扳机或该侧手柄丢失后再激活，重新开始钳制。用途是激活时手柄位置不合理（离得太远）不会把臂拉出去，而不是限制遥操过程中的动作范围。
+- 钳制 $\Pi$：每轴截断到 $[\mathbf c - d, \mathbf c + d]$。正方体是凸集，每轴截断就是最近点投影，连续、幂等。解除时映射目标就在正方体内，等于钳制结果，发布值不跳变。
+- 追赶 / 限速每帧从上一帧发布值向（钳制后的）目标移动，不需要再次投影。
 - **只约束位置，不约束姿态**（姿态由 WBC 权重处理）。
 - 被约束**不触发失能**，只在 `~/status` 中标记 `clamped`。
-- 首次激活 / 再激活时若映射目标在边界外，追赶目标就是投影后的点，臂停在边界上等用户手回来。
+- 首次激活 / 再激活时若映射目标在正方体外，追赶目标就是钳制后的点，臂停在边界上等用户手回来。
 
 ### 9.3 平滑追赶
 
 - 起点：该臂当前末端反馈 $X^{fb}_i$；终点：每周期最新的 $\Pi(\text{映射目标})$。
 - 位置以 $v_{catch}$=0.15 m/s、姿态以 $\omega_{catch}$=0.8 rad/s 逼近（slerp），发布值 = 起点向终点按限速推进。
-- 收敛：位置误差 < 2 cm 且姿态误差 < 5°（对**投影后**目标计算）→ 激活。
-- 失败 → 失能：
-  - 追赶期间**手柄原始速度** > 0.8 m/s 或 3 rad/s（"动作过快"）；
+- 收敛：位置误差 < 2 cm 且姿态误差 < 5°（对**钳制后**目标计算）→ 激活。
+- 失败 → **只停该臂**（不失能）：臂停在当前发布值上（不跳变），回到 `停住`，原因写入 `~/status` 的 `catch_aborts`；仍按住的侧扳机不算数，需松开后重新双击并按住才再次追赶，不用 B/A。另一臂、腰和底盘不受影响（双激活随之结束）。失败条件：
+  - 追赶期间**手柄速度** > 0.8 m/s 或 3 rad/s（"动作过快"）；速度按间隔 ≥ 50 ms 的两帧差分，XR 时间戳是接收时刻，样本可能成批到达（间隔 < 1 ms），逐帧差分会把抖动放大成"过快"；
   - 追赶超过 `catch_timeout_s`=5 s。
-- 激活后仍限速（`v_max`=1.0 m/s，`ω_max`=3 rad/s），防止单帧尖峰。
+- 激活后遥操层不限速，发布值直接等于（钳制后的）映射目标；速度上限由 kstone 臂的 `trajectory` 负责，单帧尖峰由 XR 跳变检测（`jump_pos`/`jump_ang_deg`，手柄另加 `jump_speed`/`jump_rate_deg` × 时间间隔）兜底。
 
 ---
 
@@ -436,17 +436,19 @@ sequenceDiagram
 
 | 类别 | 条件（默认值） |
 |---|---|
-| XR 头盔 | 头盔 transform 超时 > `xr_timeout_s`（按本节点接收时刻判定，不使用 XR 时间戳）；时间戳回退；单帧位移 > `jump_pos`=0.10 m 或旋转 > `jump_ang_deg`=30° |
+| XR 头盔 | 时间戳回退；单帧位移 > `jump_pos`=0.10 m 或旋转 > `jump_ang_deg`=30°（头盔不随时间放宽，所以重新居中一定能检出） |
 | 用户 | B 短按 |
-| 追赶 | 过快 / 超时（§9.3） |
-| 跟踪 | 双激活期间**不**对持续误差判失能；仅对误差**跳变**判失能：$\lvert d(\text{position\_error})/dt\rvert >$ `track_err_rate_pos` 或 $\lvert d(\text{orientation\_error})/dt\rvert >$ `track_err_rate_ang`，连续 `track_err_rate_n` 个状态样本（30 Hz 求导噪声大，先一阶低通） |
-| 运控 | `~/state` 超时 > `kstone_timeout_s`；`fault` 非空；`fresh=false`（`require_fresh`）；所需模块被禁用；模块被其他来源抢占（`held_by` 非空）；Home / 服务请求失败 |
+| 运控 | `~/state` 超时 > `kstone_timeout_s`；`fault` 非空；除末端执行器外的反馈组过期（`require_fresh`，见下）；所需模块被禁用；模块被其他来源抢占（`held_by` 非空）；Home / 服务请求失败 |
 
 失能动作：只停发命令，**不调用 enable 服务**——停发臂/腰/底盘位姿目标（kstone 保持最后目标），底盘发一次零速后停发；机械手仍跟随主扳机；只接受 B 长按。
 
-**只停单臂（不失能）**：某侧手柄 transform / joy 超时、时间戳回退、单帧位移 > 10 cm 或旋转 > 30°、与头盔距离 > `max_reach`=1.0 m。该臂保持目标，恢复后双击按住侧扳机重新接管；另一臂、腰、底盘不受影响（单臂停住即非双激活，头盔不再驱动腰/底盘）。
+**停两臂（不失能）**：头盔 transform 超时 > `xr_timeout_s`=0.5 s（按本节点接收时刻判定，不使用 XR 时间戳）。两臂按下面单臂的方式停住，腰和头盔驱动的底盘随之保持（非双激活）；摇杆仍可用。头盔恢复时丢弃丢失前的跳变参考，不误报跳变。
 
-> 只是被边界投影 **不** 算失能；松开侧扳机也 **不** 算失能；底盘目标被偏差钳位（§8.3）也 **不** 算失能。
+**只停单臂（不失能）**：某侧手柄 transform / joy 超时 > `xr_timeout_s`、时间戳回退、单帧位移 > 10 cm + 6 m/s × Δt 或旋转 > 30° + 1200°/s × Δt（Δt 为两次检查之间该手柄的 XR 时间戳间隔，最多按 0.1 s 计，断流恢复后仍检测跳变；实测快速挥手可达 7 m/s，周期抖动时单帧可超过 20 cm，只用固定阈值会把连续的快速动作误判为跳变）、与头盔距离 > `max_reach`=1.0 m；该臂追赶期间手柄过快或追赶超时（§9.3）。该臂保持目标，恢复后双击按住侧扳机重新接管；另一臂、腰、底盘不受影响（单臂停住即非双激活，头盔不再驱动腰/底盘）。
+
+> 只是被工作空间钳制 **不** 算失能；松开侧扳机也 **不** 算失能。
+>
+> 末端执行器掉线（如手线松动）**不** 失能：kstone 把每只手放在单独的反馈组（kstone.yaml `feedback_groups`），掉线时只停该手的手指指令，`~/state.groups` 中该组 `fresh=false`；遥操忽略 `ee_feedback_groups`（默认 `[left_hand, right_hand]`）中的组，臂、腰、底盘照常遥操，手重新接上后自动恢复。臂、腰（`default` 组）或底盘（`base` 组）过期仍整体失能。
 
 所有检查都在每个 已使能 周期**最先**执行，不论臂是否激活；任一失能条件命中即失能并 return，本周期不做映射、不发布，所以跳变帧永远不会发给运控。
 
@@ -457,9 +459,10 @@ Quest 长按 Home 键重新居中会重置 `local-floor` 参考空间：同一�
 | 时机 | 结果 |
 |---|---|
 | 已使能中居中 | 偏移通常远超 10 cm / 30°，头盔跳变检测在下一周期命中 → 整体失能，跳变帧不下发 |
+| 头盔数据超时期间居中 | 超时已让两臂停住，恢复时不比较跳变；之后同"松开双侧扳机后"一行 |
 | 失能后居中 | 不发臂和腰的命令，机械手照常跟随主扳机（§10）；之后回 Home 并重新校准，全部参考重置 |
 | 松开双侧扳机后、小于阈值的偏移 | 臂是 $F_h$ 局部量不受影响；腰 yaw、底盘在下次双激活时重记参考；`local-floor` 保留地面高度，腰 Z 不变；pitch 只取身体系 pitch，不受平移/yaw 影响 |
-| 双激活中、小于阈值的偏移 | 腰 yaw / 底盘目标最多改变一个阈值量，并受 `waist_yaw_rate`、`chassis_v_max/w_max` 限速与底盘偏差钳位保护 |
+| 双激活中、小于阈值的偏移 | 腰 yaw / 底盘目标最多改变一个阈值量，并受 `waist_yaw_rate`、`chassis_vx_max/vy_max/w_max` 限速 |
 
 任何时机居中都不会把跳变下发给运控。面向操作者的要求见[快速上手 §3](vr_teleop_quickstart.zh-CN.md#3-操作前准备)。
 
@@ -472,25 +475,24 @@ Quest 长按 Home 键重新居中会重置 `local-floor` 参考空间：同一�
 | 分组 | 参数 | 默认 |
 |---|---|---|
 | 话题 | `xr_namespace` / `kstone_namespace` | `/xr_media`（绝对名，XR 设备共用） / `kstone`（相对名，跟随节点命名空间） |
-| 轴 | `body_axes`（头盔可驱动的轴，与 discover 求交） | `[chassis, waist_z, waist_pitch, waist_yaw]` |
+| 轴 | `body_axes`（头盔可驱动的轴，与 discover 求交） | `[chassis, waist_x, waist_z, waist_pitch, waist_yaw]` |
 | 频率 | `rate_hz` | 50 |
 | 按键 | `long_press_s` / `double_tap_s` / `grip_on` / `grip_off` | 1.0 / 0.4 / 0.6 / 0.4 |
-| 摇杆 | `deadzone` / `max_vx` / `max_vy` / `max_wz` | 0.15 / 0.5 / 0.5 / 1.0 |
+| 摇杆 | `deadzone` / `max_vx` / `max_vy` / `max_wz` | 0.15 / 0.8 / 0.8 / 1.5（trio 配置） |
 | 摇杆腰偏置 | `joy_z_rate` / `joy_pitch_rate` | 0.10 m/s / 0.3 rad/s |
 | 挂载 | `headset_forward_axis` / `mount_max_deg` / `yaw_warn_deg` | `[1,0,0]` / 35 / 15 |
-| 校准 | `calib_x` / `calib_z` / `min_cross` / `max_side` / `spacing_tol` / `rel_ori_warn_deg` | `[0.15,0.70]` / `[-0.60,0.30]` / 0.10 / 0.20 / 0.10 / 45 |
-| 映射 | `R_body_to_torso`（rpy） / `controller_tcp`（xyz + rpy） / `C_left` / `C_right`（四元数 w,x,y,z） | `[0,0,0]` / 全 0 / 未设置时取 discover 中该臂的 Home 姿态 |
-| 腰 | `k_z` / `k_pitch` | 1.0 / 1.0 |
-| 腰范围（相对 A） | `waist_z_range` / `waist_pitch_range` / `waist_yaw_range` | `[-0.3, 0.1]` / `[-0.2, 0.6]` / `[-0.8, 0.8]` |
-| 腰限速 | `waist_z_rate` / `waist_pitch_rate` / `waist_yaw_rate` | 0.2 m/s / 0.8 rad/s / 1.0 rad/s |
-| 腰 pitch 绝对限位 | `waist_pitch_limits_deg` | `[-45, 90]`（后仰, 前俯） |
+| 校准 | `calib_x` / `calib_z` / `min_cross` / `max_side` / `spacing_tol`（仅警告） | `[0.15,0.70]` / `[-0.60,0.30]` / 0.10 / 0.20 / 0.10 |
+| 映射 | `R_body_to_torso`（rpy） / `controller_tcp`（xyz + rpy） | `[0,0,0]` / 全 0（姿态 $C_i$ 在 A 时求解，§8.1） |
+| 腰 | `k_x` / `k_z` / `k_pitch` | 1.0 / 1.0 / 1.0 |
+| 腰 Z 范围（相对 A） | `waist_z_range` | `[-0.8, 0.15]` |
+| 腰限速 | `waist_x_rate` / `waist_z_rate` / `waist_pitch_rate` / `waist_yaw_rate` | 0.2 m/s / 0.2 m/s / 0.8 rad/s / 1.0 rad/s |
+| 腰 pitch 绝对限位 | `waist_pitch_limits_deg` | `[-30, 90]`（后仰, 前俯） |
+| 腰 yaw 绝对限位 | `waist_yaw_limits_deg` | `[-89, 89]` |
 | 身体模式 | `default_body_mode` | `waist`（仅有 `chassis` 轴时可切到 `chassis`） |
-| 底盘 | `chassis_scale` / `chassis_deadband_pos` / `chassis_deadband_deg` / `chassis_v_max` / `chassis_w_max` / `chassis_max_dev_pos` / `chassis_max_dev_deg` | 1.0 / 0.02 m / 2° / 0.5 / 1.0 / 0.2 m / 15° |
-| 边界 | `shoulder_offsets`（左肩 xyz + 右肩 xyz，躯干系） / `r_min` / `r_max` / `x_min` / `ws_z_range` / `midline_delta` / `min_hand_gap` | `[0, 0.2005, 0.05, 0, -0.2005, 0.05]` / 0.20 / 0.75 / 0.10 / `[-0.6, 0.3]` / 0.05 / 0.10 |
+| 底盘 | `chassis_scale` / `chassis_deadband_pos` / `chassis_deadband_deg` / `chassis_vx_max` / `chassis_vy_max` / `chassis_w_max` | 1.0 / 0.02 m / 2° / 0.5 / 0.5 / 1.0（trio 配置 1.0 / 0.8 / 2.0） |
+| 边界 | 无参数：正方体由 A 时双臂 Home 点求出（§9.2） | — |
 | 追赶 | `v_catch` / `w_catch` / `catch_pos_tol` / `catch_ori_tol_deg` / `catch_timeout_s` / `catch_fast_v` / `catch_fast_w` | 0.15 / 0.8 / 0.02 / 5 / 5.0 / 0.8 / 3.0 |
-| 限速 | `v_max` / `w_max`（同步后目标速度上限） | 1.0 / 3.0 |
-| 安全 | `xr_timeout_s` / `jump_pos` / `jump_ang_deg` / `max_reach` / `kstone_timeout_s` / `require_fresh` | 0.2 / 0.10 / 30 / 1.0 / 0.3（state 30 Hz） / true |
-| 跟踪跳变 | `track_err_rate_pos` / `track_err_rate_ang` / `track_err_rate_n` / `track_err_lpf_hz` | 1.0 m/s / 6 rad/s / 3 / 10 Hz |
+| 安全 | `xr_timeout_s` / `jump_pos` / `jump_ang_deg` / `jump_speed` / `jump_rate_deg` / `max_reach` / `kstone_timeout_s` / `require_fresh` / `ee_feedback_groups` | 0.5 / 0.10 / 30 / 6.0 / 1200 / 1.0 / 0.3（state 30 Hz） / true / `[left_hand, right_hand]` |
 | 底盘发布 | `cmd_vel_min_hz` | 10 |
 | 末端执行器 | `ee_modules` / `trigger_deadzone` | `[left_hand_joint, right_hand_joint]` / 0.05 |
 | 末端关节 | `ee_open` / `ee_close` / `ee_lower` / `ee_upper` / `ee_joints_{left,right}` | 全 0 / 关节上限 / discover 限位 / discover 限位 / discover 关节名 |
@@ -531,7 +533,7 @@ lookie_teleop/
 │   ├── frames.py        # 挂载修正、F_h / F_t
 │   ├── calibration.py   # §7 检查与参考记录
 │   ├── mapping.py       # 臂 / 腰 / 底盘 / 手映射
-│   ├── workspace.py     # 边界投影 Π
+│   ├── workspace.py     # 工作空间钳制 Π
 │   ├── catchup.py       # 追赶与限速
 │   ├── safety.py        # 失能检测
 │   └── home.py          # 回 Home 服务调用与完成判定
@@ -562,8 +564,8 @@ ros2 launch lookie_bringup teleop.launch.py
 
 | 层级 | 内容 |
 |---|---|
-| 单元 | 长按/双击按住时序；挂载分解往返；臂映射中点 1:1；校准检查各条拒绝/警告；投影 $\Pi$ 连续性与幂等性；追赶收敛/过快/超时；误差跳变（导数）检测与持续误差不触发；回 Home 判定（outcome 未受理/超时、旧 succeeded、快速完成、timed_out/aborted、held_by 被占）；失能各触发项 |
-| 状态机 | 全部迁移边；回Home 期间只有主扳机有效；失能仅 B 长按与主扳机有效；摇杆松开重记参考；Y 切换时刻参考 |
+| 单元 | 长按/双击按住时序；挂载分解往返；臂映射中点 1:1（间距不一致仅警告）；校准检查各条拒绝/警告；工作空间钳制（可过中线、各臂独立）；追赶收敛/过快/超时；误差跳变（导数）检测与持续误差不触发；回 Home 判定（outcome 未受理/超时、旧 succeeded、快速完成、timed_out/aborted、held_by 被占）；失能各触发项 |
+| 状态机 | 全部迁移边；回Home 期间只有主扳机有效；失能仅 B 长按与主扳机有效；摇杆松开、底盘停稳后重记参考；Y 切换时刻参考 |
 | 集成 | kstone_ros + xr_media_ros（或回放的 xr 数据）：A → 双臂激活 → 腰/底盘跟随 → 边界 → B 回 Home |
 | 实机前 | neo（`body_axes: [waist_pitch]`）下头盔只驱动 pitch；trio 下 Y 切换；断开手柄 / 退出 XR 触发失能 |
 
