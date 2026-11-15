@@ -23,6 +23,9 @@ echo 'export LOOKIE_MODEL=lookie__pf-lookie_trio_r01__ee-revo2std_r01' >> ~/.bas
 
 Start them in this order, one per terminal, after the CAN interfaces listed in [lookie_driver](../lookie_driver/README.md#can-interfaces) are up.
 
+> [!WARNING]
+> With the default `driver_ros.yaml` (`auto_enable: true`, `control_enabled: true`), `lookie.launch.py` enables every motor as soon as the drivers start. `kstone.launch.py` drives the robot as soon as it receives fresh feedback: it starts from the measured pose, then the arms settle for a few seconds (null space). Keep the area around the robot clear before starting either.
+
 ### lookie.launch.py
 
 ```bash
