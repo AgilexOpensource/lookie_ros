@@ -23,6 +23,10 @@ model:
         r_arm_joint3: 2.090
 rate_hz: 50
 feedback_timeout_s: 0.25
+# Each hand attaches on its own: an unplugged hand stops only its fingers, the rest keeps running.
+feedback_groups:
+  - {name: left_hand, joints: [left_thumb_metacarpal_joint, left_thumb_proximal_joint, left_index_proximal_joint, left_middle_proximal_joint, left_ring_proximal_joint, left_pinky_proximal_joint]}
+  - {name: right_hand, joints: [right_thumb_metacarpal_joint, right_thumb_proximal_joint, right_index_proximal_joint, right_middle_proximal_joint, right_ring_proximal_joint, right_pinky_proximal_joint]}
 realtime: true
 # Real-time thread for run(); failures only warn. Needs root, CAP_SYS_NICE/CAP_IPC_LOCK or rtprio/memlock limits.
 thread:
@@ -64,12 +68,8 @@ modules:
       max_angular_velocity: 1.0
       max_linear_acceleration: 2.5
       max_linear_deceleration: 2.5
-      max_linear_reversal_deceleration: 2.5
       max_angular_acceleration: 5.0
       max_angular_deceleration: 5.0
-      max_angular_reversal_deceleration: 5.0
-      max_linear_jerk: 10.0
-      max_angular_jerk: 15.0
       position_tolerance: 0.001
       orientation_tolerance: 0.002
       target_position_deadband: 0.02
@@ -107,9 +107,11 @@ modules:
     trajectory:
       # lead_speed_scale: 1.5
       lead_speed_scale: 5.0
-      position: {velocity: 2.0, acceleration: 20.0, deceleration: 20.0, reversal_deceleration: 40.0, jerk: 200.0}
-      # orientation: {velocity: 6.0, acceleration: 10.0, deceleration: 10.0, reversal_deceleration: 20.0, jerk: 100.0}
-      orientation: {velocity: 5.0, acceleration: 10.0, deceleration: 10.0, reversal_deceleration: 20.0, jerk: 100.0}
+      # Velocity cap only: acceleration/deceleration/jerk 0 = unlimited; teleop publishes the mapped target directly.
+      # position: {velocity: 2.0, acceleration: 20.0, deceleration: 20.0, reversal_deceleration: 40.0, jerk: 200.0}
+      # orientation: {velocity: 5.0, acceleration: 10.0, deceleration: 10.0, reversal_deceleration: 20.0, jerk: 100.0}
+      position: {velocity: 2.0}
+      orientation: {velocity: 5.0}
   right_arm_pose:
     type: frame_target
     frame: right_base_link
@@ -124,27 +126,27 @@ modules:
     trajectory:
       # lead_speed_scale: 1.5
       lead_speed_scale: 5.0
-      position: {velocity: 2.0, acceleration: 20.0, deceleration: 20.0, reversal_deceleration: 40.0, jerk: 200.0}
-      # orientation: {velocity: 6.0, acceleration: 10.0, deceleration: 10.0, reversal_deceleration: 20.0, jerk: 100.0}
-      orientation: {velocity: 5.0, acceleration: 10.0, deceleration: 10.0, reversal_deceleration: 20.0, jerk: 100.0}
+      # Velocity cap only: acceleration/deceleration/jerk 0 = unlimited; teleop publishes the mapped target directly.
+      # position: {velocity: 2.0, acceleration: 20.0, deceleration: 20.0, reversal_deceleration: 40.0, jerk: 200.0}
+      # orientation: {velocity: 5.0, acceleration: 10.0, deceleration: 10.0, reversal_deceleration: 20.0, jerk: 100.0}
+      position: {velocity: 2.0}
+      orientation: {velocity: 5.0}
   left_arm_null:
     type: null_space
     primary: left_arm_pose
+    # posture/initial pulled the stretched elbow at handover back and forth against the joint4 limit
     preference: manipulability
     manipulability_rate: 1.0
-    task: {level: 1}
-    reference: initial
-    posture_weight: 0.05
     manipulability_weight: 0.1
+    task: {level: 1}
   right_arm_null:
     type: null_space
     primary: right_arm_pose
+    # posture/initial pulled the stretched elbow at handover back and forth against the joint4 limit
     preference: manipulability
     manipulability_rate: 1.0
-    task: {level: 1}
-    reference: initial
-    posture_weight: 0.05
     manipulability_weight: 0.1
+    task: {level: 1}
   torso_joint:
     type: joint_target
     joints: [torso_joint1, torso_joint2]
@@ -170,12 +172,14 @@ modules:
     joints: [left_thumb_metacarpal_joint, left_thumb_proximal_joint, left_index_proximal_joint, left_middle_proximal_joint, left_ring_proximal_joint, left_pinky_proximal_joint]
     on_idle: claim
     release_after_s: 0.25
+    trajectory: {trigger: direct}  # fingers follow the target without shaping
     task: {level: 1}
   right_hand_joint:
     type: joint_target
     joints: [right_thumb_metacarpal_joint, right_thumb_proximal_joint, right_index_proximal_joint, right_middle_proximal_joint, right_ring_proximal_joint, right_pinky_proximal_joint]
     on_idle: claim
     release_after_s: 0.25
+    trajectory: {trigger: direct}  # fingers follow the target without shaping
     task: {level: 1}
   head_joint:
     type: joint_target
@@ -225,7 +229,7 @@ modules:
       - [left_base_link, right_base_link]
     closed_loop: false
     # constraint: {clearance: 0.002, activation_margin: 0.02, hysteresis: 0.005, gain: 1.5}
-    constraint: {clearance: 0.002, activation_margin: 0.01, hysteresis: 0.005, gain: 1.5, approach_deceleration: 20}
+    constraint: {clearance: 0.01, activation_margin: 0.01, hysteresis: 0.005, gain: 1.5, approach_deceleration: 20}
 #  obstacles:
 #    type: world_collision
 #    velocity_timeout_s: 0.2

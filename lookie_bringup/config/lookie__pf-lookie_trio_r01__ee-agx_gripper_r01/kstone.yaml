@@ -26,6 +26,10 @@ model:
         r_arm_joint3: 2.090
 rate_hz: 50
 feedback_timeout_s: 0.25
+# Each gripper attaches on its own: an unplugged gripper stops only itself, the rest keeps running.
+feedback_groups:
+  - {name: left_gripper, joints: [l_gripper]}
+  - {name: right_gripper, joints: [r_gripper]}
 realtime: true
 # Real-time thread for run(); failures only warn. Needs root, CAP_SYS_NICE/CAP_IPC_LOCK or rtprio/memlock limits.
 thread:
@@ -65,20 +69,23 @@ modules:
       command_timeout_s: 0.25
       kinematics: omni
       base_frame: chassis_base_link
-      max_linear_velocity: 0.5  # real-robot cap, kept
-      max_angular_velocity: 1.0
-      max_linear_acceleration: 2.5
-      max_linear_deceleration: 2.5
-      max_linear_reversal_deceleration: 2.5
-      max_angular_acceleration: 5.0
-      max_angular_deceleration: 5.0
-      max_angular_reversal_deceleration: 5.0
-      max_linear_jerk: 10.0
-      max_angular_jerk: 15.0
+      max_linear_velocity: 1.0  # body x, measured reachable 1.0 m/s
+      max_lateral_velocity: 0.8  # body y, measured 0.87 m/s within 2 m (accel ~0.49)
+      max_angular_velocity: 2.0  # measured reachable
+      # Measured on this base (driver cmd_vel steps and speed runs, 2026-11-15), accel/decel:
+      # x 0.75-0.82/0.91-0.99 m/s^2 (1.0 m/s reached), y 0.48-0.50/0.50 m/s^2 (0.87 m/s in 2 m),
+      # yaw 1.6-1.9/1.8 rad/s^2 (2.0 rad/s reached). Limits sit just below each axis.
+      max_linear_acceleration: 0.7
+      max_linear_deceleration: 0.85
+      max_lateral_acceleration: 0.45
+      max_lateral_deceleration: 0.45
+      max_angular_acceleration: 1.4
+      max_angular_deceleration: 1.4
       position_tolerance: 0.001
       orientation_tolerance: 0.002
       target_position_deadband: 0.02
       target_orientation_deadband: 0.035
+      odom_latency_s: 0.165  # measured command-to-odometry delay (base ~0.14 s + driver/relay ~0.02 s); stops pose-mode back-and-forth
     # period_s: 0.02  # engine dt replaces it
   torso_pose:
     type: frame_target
@@ -113,9 +120,11 @@ modules:
     trajectory:
       # lead_speed_scale: 1.5
       lead_speed_scale: 5.0
-      position: {velocity: 2.0, acceleration: 20.0, deceleration: 20.0, reversal_deceleration: 40.0, jerk: 200.0}
-      # orientation: {velocity: 6.0, acceleration: 10.0, deceleration: 10.0, reversal_deceleration: 20.0, jerk: 100.0}
-      orientation: {velocity: 5.0, acceleration: 10.0, deceleration: 10.0, reversal_deceleration: 20.0, jerk: 100.0}
+      # Velocity cap only: acceleration/deceleration/jerk 0 = unlimited; teleop publishes the mapped target directly.
+      # position: {velocity: 2.0, acceleration: 20.0, deceleration: 20.0, reversal_deceleration: 40.0, jerk: 200.0}
+      # orientation: {velocity: 5.0, acceleration: 10.0, deceleration: 10.0, reversal_deceleration: 20.0, jerk: 100.0}
+      position: {velocity: 2.0}
+      orientation: {velocity: 5.0}
   right_arm_pose:
     type: frame_target
     frame: r_gripper_tip
@@ -129,27 +138,27 @@ modules:
     trajectory:
       # lead_speed_scale: 1.5
       lead_speed_scale: 5.0
-      position: {velocity: 2.0, acceleration: 20.0, deceleration: 20.0, reversal_deceleration: 40.0, jerk: 200.0}
-      # orientation: {velocity: 6.0, acceleration: 10.0, deceleration: 10.0, reversal_deceleration: 20.0, jerk: 100.0}
-      orientation: {velocity: 5.0, acceleration: 10.0, deceleration: 10.0, reversal_deceleration: 20.0, jerk: 100.0}
+      # Velocity cap only: acceleration/deceleration/jerk 0 = unlimited; teleop publishes the mapped target directly.
+      # position: {velocity: 2.0, acceleration: 20.0, deceleration: 20.0, reversal_deceleration: 40.0, jerk: 200.0}
+      # orientation: {velocity: 5.0, acceleration: 10.0, deceleration: 10.0, reversal_deceleration: 20.0, jerk: 100.0}
+      position: {velocity: 2.0}
+      orientation: {velocity: 5.0}
   left_arm_null:
     type: null_space
     primary: left_arm_pose
+    # posture/initial pulled the stretched elbow at handover back and forth against the joint4 limit
     preference: manipulability
     manipulability_rate: 1.0
-    task: {level: 1}
-    reference: initial
-    posture_weight: 0.05
     manipulability_weight: 0.1
+    task: {level: 1}
   right_arm_null:
     type: null_space
     primary: right_arm_pose
+    # posture/initial pulled the stretched elbow at handover back and forth against the joint4 limit
     preference: manipulability
     manipulability_rate: 1.0
-    task: {level: 1}
-    reference: initial
-    posture_weight: 0.05
     manipulability_weight: 0.1
+    task: {level: 1}
   torso_joint:
     type: joint_target
     joints: [torso_joint1, torso_joint2, torso_joint3, torso_joint4]
@@ -175,12 +184,14 @@ modules:
     joints: [l_gripper]  # followers are coupled mimics
     on_idle: claim
     release_after_s: 0.25
+    trajectory: {trigger: direct}  # the gripper follows the target without shaping
     task: {level: 1}
   right_gripper_joint:
     type: joint_target
     joints: [r_gripper]
     on_idle: claim
     release_after_s: 0.25
+    trajectory: {trigger: direct}  # the gripper follows the target without shaping
     task: {level: 1}
   head_joint:
     type: joint_target
@@ -228,7 +239,7 @@ modules:
       - [l_gripper_base_link, r_gripper_base_link]
     closed_loop: false
     # constraint: {clearance: 0.002, activation_margin: 0.02, hysteresis: 0.005, gain: 1.5}
-    constraint: {clearance: 0.002, activation_margin: 0.01, hysteresis: 0.005, gain: 1.5, approach_deceleration: 20}
+    constraint: {clearance: 0.01, activation_margin: 0.01, hysteresis: 0.005, gain: 1.5, approach_deceleration: 20}
 #  obstacles:
 #    type: world_collision
 #    velocity_timeout_s: 0.2
