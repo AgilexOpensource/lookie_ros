@@ -31,7 +31,7 @@ flowchart LR
         IN["Input layer<br/>freshness / jump detection"]
         BTN["Button parsing<br/>long press / double-press and hold"]
         SM["State machine"]
-        MAP["Mapping<br/>arms / waist / chassis / hands"]
+        MAP["Mapping<br/>arms / waist / chassis / end effectors"]
         CLP["Workspace clamp + smooth catch-up"]
         OUT["Output layer"]
     end
@@ -94,7 +94,7 @@ Fields used from `/kstone/state`:
 Publishing rules:
 
 - All commands with a header are stamped with **this node's `now()`**; the XR data timestamps are not reused (kstone rejects timestamps older than 0.5 s or in the future).
-- Chassis `cmd_vel`: while Enabled and the headset is not driving the chassis, published **continuously** at ≥ 10 Hz (with the main loop), with 0 sent when the joysticks are centred; `cmd_vel` is not published while the headset drives the chassis pose (to avoid pre-empting the pose command). The kstone chassis velocity port times out after 0.25 s, so the chassis stops by itself once publishing stops.
+- Chassis `cmd_vel`: while Homed, or while Enabled and the headset is not driving the chassis, published **continuously** at ≥ 10 Hz (with the main loop), with 0 sent when the joysticks are centred; `cmd_vel` is not published while the headset drives the chassis pose (to avoid pre-empting the pose command). The kstone chassis velocity port times out after 0.25 s, so the chassis stops by itself once publishing stops.
 
 ### 2.3 Service calls
 
@@ -513,7 +513,7 @@ lookie_teleop/
 │   ├── transforms.py    # SE(3) / quaternion utilities
 │   ├── frames.py        # mount correction, F_h / F_t
 │   ├── calibration.py   # §7 checks and reference recording
-│   ├── mapping.py       # arm / waist / chassis / hand mapping
+│   ├── mapping.py       # arm / waist / chassis / end effector mapping
 │   ├── workspace.py     # workspace clamp Π
 │   ├── catchup.py       # catch-up and rate limiting
 │   ├── safety.py        # disable detection
