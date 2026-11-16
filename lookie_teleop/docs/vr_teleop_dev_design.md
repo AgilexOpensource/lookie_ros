@@ -90,6 +90,7 @@ flowchart LR
 | `/kstone/chassis/control/pose` | `PoseStamped`，frame `world_frame` | 底盘平面位姿目标（**仅全向**，头盔驱动时） |
 | `/kstone/chassis/control/cmd_vel` | `Twist` | 摇杆底盘速度（全向 x/y/yaw，差速 x/yaw）；见下方发布规则 |
 | `/kstone/control/joint` | `JointState`，frame_id 为空 | 机械手 6 指关节目标（按名路由到 `*_hand_joint`） |
+| `/xr_media/{left,right}_controller/haptic` | `Float32MultiArray` `[强度, 时长 ms]` | 手柄震动确认（§5） |
 | `~/status` | `String` JSON | 遥操状态、拒绝/失能原因、各臂子状态（UI/日志） |
 
 发布规则：
@@ -191,18 +192,19 @@ stateDiagram-v2
 | X（左 `buttons[3]`） | 长按 1 s | 已归位、已使能 | 右摇杆 y 调节 腰Z ↔ 腰pitch（默认 Z）；**无急停** |
 | 侧扳机 `axes[3]` | 按下阈值 0.6 / 释放 0.4（滞回）；两次按下间隔 ≤ `double_tap_s`=0.4 s 且第二次保持按住 | 已使能 | 该臂 停住 → 追赶；松开 → 停住 |
 | 主扳机 `axes[2]` | 连续值 0~1 | 所有状态 | 机械手比例开合（§10） |
-
-> 手柄震动确认（经 xr_media_ros 发布到 `{xr_namespace}/{side}_controller/haptic`，格式 `[强度 0–1, 单次时长 ms, 次数, 间隔 ms]`，次数与间隔可省略即震一下，时长 0 关闭；后续几下由 `_tick` 发出，新的震动会取代该手柄尚未发完的震动）：
-> - 长按被受理（上表 B / A / Y / X 执行动作）时，按键所在手柄按 `haptic_long_press`=`[1.0, 100, 2, 250]` 震两下。A 的震动只表示长按已识别，校准是否通过另看状态提示。
-> - 侧扳机双击被受理（该臂由停住转为接管）时，该侧手柄按 `haptic_grip_engage`=`[1.0, 100]` 震一下。
->
-> 设备不支持震动时无效果（Quest 3 浏览器、PICO 4 Ultra 的 PICO 浏览器和 Wolvic 实测可震）。
 | 左摇杆 | 死区 0.15 | 已使能 | 底盘平移速度 |
 | 右摇杆 x | 死区 0.15 | 已使能 | 底盘转向速度 |
 | 右摇杆 y | 死区 0.15 | 已使能 | 腰 Z 或 pitch **偏置**积分（保留到下次回 Home） |
 
 - 长按在**按下沿后满 1 s** 触发，不等松开，避免用户不知何时算数。
 - A/X/Y 长按计时期间的短按无副作用；B 的短按在松开时才判定，因此长按 B 不会先触发失能。
+
+**手柄震动确认**（发布到 `/xr_media/{side}_controller/haptic`，由 xr_media_ros 转给头显）：
+
+- 长按被受理（上表 B / A / Y / X 执行动作）时，按键所在手柄按 `haptic_long_press`=`[1.0, 100, 2, 250]` 震两下。A 的震动只表示长按已识别，校准是否通过另看状态提示。
+- 侧扳机双击被受理（该臂由停住转为接管）时，该侧手柄按 `haptic_grip_engage`=`[1.0, 100]` 震一下。
+- 参数格式为 `[强度 0–1, 单次时长 ms, 次数, 间隔 ms]`；次数与间隔可省略（震一下），时长 0 关闭。第二下起由 `_tick` 发出，新的震动会取代该手柄尚未发完的震动。
+- 头显浏览器不支持震动或处于手势追踪时无效果，不影响操作。
 
 ### 5.1 摇杆与头盔的底盘仲裁
 
