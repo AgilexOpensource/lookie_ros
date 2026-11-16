@@ -639,6 +639,39 @@ def test_headset_timeout_stops_both_arms_instead_of_disabling():
     assert "headset" in node.TeleopNode._xr_issues(fake, object(), object(), 1.63)
 
 
+def test_accepted_long_press_pulses_that_controller():
+    from types import SimpleNamespace
+    node = pytest.importorskip("lookie_teleop.node")
+    sent = []
+    pub = lambda side: SimpleNamespace(publish=lambda m: sent.append((side, list(m.data))))
+    fake = SimpleNamespace(
+        p={"haptic_long_press": [0.5, 80.0, 2.0, 250.0]}, state=node.HOMED, profile=SimpleNamespace(has=lambda a: True),
+        body_mode="waist", stick_axis="z", dual_active=False, haptic_pubs={s: pub(s) for s in ("left", "right")},
+        _haptic_queue=[], _haptic_pattern={},
+        lp_b=ShortLongPress(1.0), lp_a=LongPress(1.0), lp_y=LongPress(1.0), lp_x=LongPress(1.0),
+        _button=lambda msg, i: msg == i, _calibrate=lambda now: sent.append("calib"))
+    fake._haptic = lambda s, pat, now: node.TeleopNode._haptic(fake, s, pat, now)
+    fake._flush_haptics = lambda now: node.TeleopNode._flush_haptics(fake, now)
+    for t in (0.0, 1.1):                                    # hold right A
+        node.TeleopNode._buttons(fake, None, node.BTN_XA, t)
+    assert sent == [("right", [0.5, 80.0]), "calib"]        # first pulse now, the second one is queued
+    fake._flush_haptics(1.3)
+    assert len(sent) == 2
+    fake._flush_haptics(1.35)
+    assert sent[2:] == [("right", [0.5, 80.0])] and fake._haptic_queue == []
+    sent.clear()
+    fake.p["haptic_long_press"] = [0.5, 0.0, 2.0, 250.0]    # 0 ms disables, the action still runs
+    for t in (2.0, 3.1):                                    # hold left Y
+        node.TeleopNode._buttons(fake, node.BTN_YB, None, t)
+    fake._flush_haptics(4.0)
+    assert sent == [] and fake.body_mode == "chassis"
+    fake.p["haptic_long_press"] = [0.5, 80.0]               # the short form pulses once
+    for t in (5.0, 6.1):                                    # hold left X
+        node.TeleopNode._buttons(fake, node.BTN_XA, None, t)
+    fake._flush_haptics(7.0)
+    assert sent == [("left", [0.5, 80.0])] and fake.stick_axis == "pitch"
+
+
 def mon_check_first(issues):
     return issues.get("headset") or next(iter(issues.values()))
 

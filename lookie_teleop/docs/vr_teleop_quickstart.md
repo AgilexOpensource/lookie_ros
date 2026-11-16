@@ -60,7 +60,7 @@ flowchart LR
 | **Right joystick** left/right | Push | Turn the chassis |
 | **Right joystick** up/down | Push | Fine-tune waist lift or pitch |
 
-> "Long press" means holding the button for about 1 s; "short press" means releasing it within 1 s.
+> "Long press" means holding the button for about 1 s; that controller vibrates twice briefly once it is recognised. "Short press" means releasing it within 1 s.
 
 ---
 
@@ -108,7 +108,7 @@ Long press **B**. The robot's torso, arms, and chassis return to the initial pos
 
 ### ③ Control the arms
 
-1. **Double-press** a grip trigger and **hold** it on the second press. The arm on that side starts following.
+1. **Double-press** a grip trigger and **hold** it on the second press. That controller vibrates once and the arm on that side starts following.
 2. At first, **keep your hand still or move it slowly** and wait for the robot arm to catch up with your hand smoothly.
 3. Once it has caught up, operate normally. The arm follows your hand's movement and rotation 1:1.
 4. **Release the grip trigger and the arm stops immediately.**

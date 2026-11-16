@@ -17,7 +17,7 @@ from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState, Joy
-from std_msgs.msg import String
+from std_msgs.msg import Float32MultiArray, String
 from std_srvs.srv import Trigger
 
 from . import calibration
@@ -51,6 +51,7 @@ PARAMS = {
     # axes the headset may drive; chassis is dropped unless discover reports a holonomic base
     "body_axes": ["chassis", "waist_x", "waist_z", "waist_pitch", "waist_yaw"],
     "long_press_s": 1.0, "double_tap_s": 0.4, "grip_on": 0.6, "grip_off": 0.4,
+    "haptic_long_press": [1.0, 100.0, 2.0, 250.0], "haptic_grip_engage": [1.0, 100.0],
     "deadzone": 0.15, "max_vx": 0.5, "max_vy": 0.5, "max_wz": 1.0,
     "joy_z_rate": 0.10, "joy_pitch_rate": 0.3,
     "headset_forward_axis": [1.0, 0.0, 0.0], "mount_max_deg": 35.0, "yaw_warn_deg": 15.0,
@@ -184,6 +185,9 @@ class TeleopNode(Node):
                                      partial(self._on_xr, key), 10)
         for side in SIDES:
             self.create_subscription(Joy, f"{xr}/{side}_controller/buttons", partial(self._on_joy, side), 10)
+        self._haptic_queue, self._haptic_pattern = [], {}
+        self.haptic_pubs = {s: self.create_publisher(Float32MultiArray, f"{xr}/{s}_controller/haptic", 10)
+                            for s in SIDES}
         ks = p["kstone_namespace"].rstrip("/")
         self.create_subscription(String, f"{ks}/discover", self._on_discover, LATCHED)
         self.create_subscription(String, f"{ks}/state", self._on_state, LATCHED)
@@ -332,6 +336,7 @@ class TeleopNode(Node):
         now = self._now()
         dt = 0.0 if self._last_tick is None else min(max(now - self._last_tick, 0.0), 0.1)
         self._last_tick = now
+        self._flush_haptics(now)
         if self.profile is not None:
             left, right = self._joy_msg("left", now), self._joy_msg("right", now)
             self._buttons(left, right, now)
@@ -353,7 +358,9 @@ class TeleopNode(Node):
         a = self.lp_a.update(self._button(right, BTN_XA) and self.state == HOMED, now)
         y = self.lp_y.update(self._button(left, BTN_YB), now)
         x = self.lp_x.update(self._button(left, BTN_XA), now)
+        long_press = self.p["haptic_long_press"]
         if b == "long" and self.state != HOMING:
+            self._haptic("right", long_press, now)
             self._start_home(now)
             return
         if b == "short" and self.state in (HOMED, ENABLED):
@@ -362,13 +369,37 @@ class TeleopNode(Node):
         if self.state not in (HOMED, ENABLED):
             return
         if a and self.state == HOMED:
+            self._haptic("right", long_press, now)
             self._calibrate(now)
         if y and self.profile.has("chassis"):
+            self._haptic("left", long_press, now)
             self.body_mode = "chassis" if self.body_mode == "waist" else "waist"
             if self.state == ENABLED and self.dual_active:
                 self._record_references()
         if x:
+            self._haptic("left", long_press, now)
             self.stick_axis = "pitch" if self.stick_axis == "z" else "z"
+
+    def _haptic(self, side, pattern, now):
+        """Pulse one controller through xr_media_ros.
+
+        ``pattern`` = [intensity 0-1, duration_ms, count, interval_ms]; the last two are optional (one
+        pulse) and 0 ms = off. ``_tick`` publishes the repeats.
+        """
+        if len(pattern) < 2 or pattern[1] <= 0.0:
+            return
+        count = int(pattern[2]) if len(pattern) > 2 else 1
+        interval = pattern[3] / 1000.0 if len(pattern) > 3 else 0.0
+        self._haptic_queue = [q for q in self._haptic_queue if q[1] != side]  # a new pattern replaces one in progress
+        self._haptic_queue += [(now + i * interval, side) for i in range(max(count, 1))]
+        self._haptic_pattern[side] = [float(pattern[0]), float(pattern[1])]
+        self._flush_haptics(now)
+
+    def _flush_haptics(self, now):
+        due = [q for q in self._haptic_queue if q[0] <= now]
+        self._haptic_queue = [q for q in self._haptic_queue if q[0] > now]
+        for _, side in due:
+            self.haptic_pubs[side].publish(Float32MultiArray(data=self._haptic_pattern[side]))
 
     # ------------------------------------------------------------------ home
     def _start_home(self, now):
@@ -532,6 +563,7 @@ class TeleopNode(Node):
                 continue
             self._update_ctrl_speed(s)
             if event == "engage" and self.arms[s].mode == STOPPED:
+                self._haptic(s, self.p["haptic_grip_engage"], now)
                 self._engage(s, now)
             elif event == "release":
                 self.arms[s] = Arm(self.arms[s].pos, self.arms[s].quat)

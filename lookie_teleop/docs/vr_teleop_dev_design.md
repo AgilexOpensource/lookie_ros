@@ -191,6 +191,12 @@ stateDiagram-v2
 | X（左 `buttons[3]`） | 长按 1 s | 已归位、已使能 | 右摇杆 y 调节 腰Z ↔ 腰pitch（默认 Z）；**无急停** |
 | 侧扳机 `axes[3]` | 按下阈值 0.6 / 释放 0.4（滞回）；两次按下间隔 ≤ `double_tap_s`=0.4 s 且第二次保持按住 | 已使能 | 该臂 停住 → 追赶；松开 → 停住 |
 | 主扳机 `axes[2]` | 连续值 0~1 | 所有状态 | 机械手比例开合（§10） |
+
+> 手柄震动确认（经 xr_media_ros 发布到 `{xr_namespace}/{side}_controller/haptic`，格式 `[强度 0–1, 单次时长 ms, 次数, 间隔 ms]`，次数与间隔可省略即震一下，时长 0 关闭；后续几下由 `_tick` 发出，新的震动会取代该手柄尚未发完的震动）：
+> - 长按被受理（上表 B / A / Y / X 执行动作）时，按键所在手柄按 `haptic_long_press`=`[1.0, 100, 2, 250]` 震两下。A 的震动只表示长按已识别，校准是否通过另看状态提示。
+> - 侧扳机双击被受理（该臂由停住转为接管）时，该侧手柄按 `haptic_grip_engage`=`[1.0, 100]` 震一下。
+>
+> 设备不支持震动时无效果（Quest 3 浏览器、PICO 4 Ultra 的 PICO 浏览器和 Wolvic 实测可震）。
 | 左摇杆 | 死区 0.15 | 已使能 | 底盘平移速度 |
 | 右摇杆 x | 死区 0.15 | 已使能 | 底盘转向速度 |
 | 右摇杆 y | 死区 0.15 | 已使能 | 腰 Z 或 pitch **偏置**积分（保留到下次回 Home） |
@@ -478,6 +484,7 @@ Quest 长按 Home 键重新居中会重置 `local-floor` 参考空间：同一�
 | 轴 | `body_axes`（头盔可驱动的轴，与 discover 求交） | `[chassis, waist_x, waist_z, waist_pitch, waist_yaw]` |
 | 频率 | `rate_hz` | 50 |
 | 按键 | `long_press_s` / `double_tap_s` / `grip_on` / `grip_off` | 1.0 / 0.4 / 0.6 / 0.4 |
+| 震动 | `haptic_long_press` / `haptic_grip_engage` | `[1.0, 100, 2, 250]` / `[1.0, 100]` |
 | 摇杆 | `deadzone` / `max_vx` / `max_vy` / `max_wz` | 0.15 / 0.8 / 0.8 / 1.5（trio 配置） |
 | 摇杆腰偏置 | `joy_z_rate` / `joy_pitch_rate` | 0.10 m/s / 0.3 rad/s |
 | 挂载 | `headset_forward_axis` / `mount_max_deg` / `yaw_warn_deg` | `[1,0,0]` / 35 / 15 |
@@ -508,7 +515,7 @@ Quest 长按 Home 键重新居中会重置 `local-floor` 参考空间：同一�
 | 无驱动仿真 | 未接驱动反馈时 `fresh=false` | `require_fresh` 参数，纯仿真调试时可关；实机必须开 |
 | outcomes 环形缓冲 | 旧结果会被挤出 | 请求后尽快轮询，查不到即失败并失能 |
 | XR 追踪状态 | xr_media_ros 只在追踪时发布，无单独标志 | 按接收超时判断（§12） |
-| 震动反馈 | WebXR 无法可靠驱动手柄震动 | 不做；提示只通过 `~/status` |
+| 震动反馈 | 依赖头显浏览器支持；手势追踪时无震动器 | 长按 / 侧扳机接管时震动确认（§5），失败不影响操作；状态仍以 `~/status` 为准 |
 | 重心 / 自碰撞 | kstone 有 `com`、`self_collision` 模块 | 遥操不干预，交由运控处理 |
 | 多遥操节点 | 两个遥操节点同时发目标会互相抢占 | 同一时刻只运行一个遥操节点 |
 | 头盔设置 | 安全边界、佩戴检测休眠、Home 键居中都会打断遥操 | 操作者按[快速上手 §3](vr_teleop_quickstart.zh-CN.md#3-操作前准备)设置；居中行为见 §12.1 |
