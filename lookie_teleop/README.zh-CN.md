@@ -1,6 +1,8 @@
 # lookie_teleop
 
-Lookie 的 VR 全身遥操：把 [xr_media_ros](https://github.com/AgilexOpensource/xr_media_ros) 的头显和手柄输入转换成 [kstone_ros](https://github.com/AgilexOpensource/kstone_ros) 的手臂、腰部、底盘和手部目标。[English](README.md)
+[English](README.md)
+
+Lookie 的 VR 全身遥操作：把 [xr_media_ros](https://github.com/AgilexOpensource/xr_media_ros) 的头显和手柄输入转换成 [kstone_ros](https://github.com/AgilexOpensource/kstone_ros) 的手臂、腰部、底盘和末端执行器目标。
 
 ## 安装
 
@@ -14,7 +16,7 @@ Lookie 的 VR 全身遥操：把 [xr_media_ros](https://github.com/AgilexOpensou
 ros2 launch lookie_bringup teleop.launch.py
 ```
 
-参数和配置见 [lookie_bringup](../lookie_bringup/README.zh-CN.md#vr-遥操)。只启动节点：
+参数和配置见 [lookie_bringup](../lookie_bringup/README.zh-CN.md#vr-遥操作)。只启动节点：
 
 ```bash
 ros2 launch lookie_teleop teleop.launch.py namespace:=trio params_file:=/abs/a.yaml,/abs/b.yaml
@@ -27,9 +29,10 @@ ros2 launch lookie_teleop teleop.launch.py namespace:=trio params_file:=/abs/a.y
 
 - 输入：XR 位姿 `<xr_namespace>/*/transform` 和手柄按键 `<xr_namespace>/{left,right}_controller/buttons`；`xr_namespace` 默认 `/xr_media`。
 - kstone：读取 `<kstone_namespace>/discover` 和 `<kstone_namespace>/state`，发布其中列出的位姿、关节和速度目标，并调用 `<kstone_namespace>/<module>/home`；`kstone_namespace` 默认 `kstone`。
+- 震动：向 `<xr_namespace>/{left,right}_controller/haptic` 发布手柄震动，用于确认长按和侧扳机接管。
 - 状态：`~/status`。
 
 ## 文档
 
-- [VR 遥操快速上手](docs/vr_teleop_quickstart.zh-CN.md)
-- [VR 遥操设计](docs/vr_teleop_dev_design.md)
+- [VR 遥操作快速上手](docs/vr_teleop_quickstart.zh-CN.md)
+- [VR 遥操作设计](docs/vr_teleop_dev_design.zh-CN.md)

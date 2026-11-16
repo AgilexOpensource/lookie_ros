@@ -1,6 +1,8 @@
 # lookie_control
 
-按给定的引擎配置、URDF、命名空间和话题运行 [kstone_ros](https://github.com/AgilexOpensource/kstone_ros) 全身控制。本包不含机型列表和配置文件。[English](README.md)
+[English](README.md)
+
+按给定的引擎配置、URDF、命名空间和话题运行 [kstone_ros](https://github.com/AgilexOpensource/kstone_ros) 全身控制。本包不含机型列表和配置文件。
 
 ## 安装
 

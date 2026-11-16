@@ -1,6 +1,8 @@
 # lookie_bringup
 
-Lookie 整机启动包：驱动（可选 RViz，无真机时用关节滑块）、kstone_ros 全身控制和 VR 遥操，均按所选机型加载配置。[English](README.md)
+[English](README.md)
+
+Lookie 整机启动包：驱动（可选 RViz，无真机时用关节滑块）、kstone_ros 全身控制和 VR 遥操作，均按所选机型加载配置。
 
 ## 安装
 
@@ -19,12 +21,12 @@ echo 'export LOOKIE_MODEL=lookie__pf-lookie_trio_r01__ee-revo2std_r01' >> ~/.bas
 | --- | --- |
 | `lookie.launch.py` | 驱动、`robot_state_publisher`，可选 RViz |
 | `kstone.launch.py` | kstone_ros 全身控制；可用 `ros2 topic echo /trio/kstone/state --qos-durability transient_local` 查看状态 |
-| `teleop.launch.py` | VR 遥操，见 [VR 遥操](#vr-遥操) |
+| `teleop.launch.py` | VR 遥操作，见 [VR 遥操作](#vr-遥操作) |
 
 先启用 [lookie_driver](../lookie_driver/README.zh-CN.md#can-接口) 中列出的 CAN 接口，再按上表顺序各开一个终端启动。
 
 > [!WARNING]
-> 默认的 `driver_ros.yaml`（`auto_enable: true`、`control_enabled: true`）下，`lookie.launch.py` 启动驱动时即使能全部电机。`kstone.launch.py` 收到新鲜反馈后即开始控制机器人：先从实测位姿开始，随后双臂会在零空间调整几秒后停稳。启动前请清空机器人周围。
+> 默认的 `driver_ros.yaml`（`auto_enable: true`、`control_enabled: true`）下，`lookie.launch.py` 启动驱动时就会使能全部电机。`kstone.launch.py` 收到新鲜反馈后即开始控制机器人：先从实测位姿开始，随后双臂会在零空间调整几秒后停稳。启动前请清空机器人周围。
 
 ### lookie.launch.py
 
@@ -34,7 +36,7 @@ ros2 launch lookie_bringup lookie.launch.py
 
 启动 `lookie_driver` 和 `lookie_description` `display.launch.py` 中的 `robot_state_publisher`，它跟随 `driver/feedback/joint_states`，不发布任何指令。`rviz:=true` 时同时打开 RViz。
 
-没有真机时，`sim:=true` 不启动驱动，改为启动关节滑块，初值为 `initial` 位姿。滑块发布到 `driver/feedback/joint_states`，kstone 和 RViz 会把它当作真机：
+没有真机时，`sim:=true` 不启动驱动，改为启动关节滑块，初值为 `initial` 位姿，Center 按钮回到该位姿。滑块发布到 `driver/feedback/joint_states`，kstone 和 RViz 会把它当作真机：
 
 ```bash
 ros2 launch lookie_bringup lookie.launch.py sim:=true rviz:=true
@@ -61,7 +63,7 @@ ros2 launch lookie_bringup lookie.launch.py sim:=true rviz:=true
 | 底盘 | `/trio/driver/chassis/{odom,cmd_vel,scout_status,rc_status,light_control}` |
 | joint bridge | `/trio/driver/feedback/joint_states`、`/trio/driver/control/joint_states` |
 | kstone_ros | `/trio/kstone/...` |
-| 遥操 | `/trio/lookie_teleop` |
+| 遥操作 | `/trio/lookie_teleop` |
 | XR | `/xr_media`（共用，不加命名空间） |
 
 TF 坐标系使用前缀 `<namespace>/`。kstone 的世界坐标系是 `trio/odom`。底盘驱动广播 `trio/odom` → `trio/base_footprint`。URDF 的根是 `base_footprint`（底盘正下方的地面点），`robot_state_publisher` 从这里接续 TF 树，kstone 也直接把这份里程计当作根位姿读取。RViz 的 Fixed Frame 为 `trio/odom`，可以看到底盘运动。没有底盘驱动或其他 `odom` 来源时，`trio/odom` 不存在，RViz 无法显示机器人，此时用 `fixed_frame:=base_footprint`。
@@ -95,7 +97,7 @@ driver:
   robot_yaml: driver_motors.yaml
   params_file: driver_ros.yaml
   bridge_config: driver_joint_bridge.yaml
-teleop:  # 见 VR 遥操
+teleop:  # 见 VR 遥操作
   ...
 kstone:
   config: kstone.yaml
@@ -105,7 +107,7 @@ kstone:
 
 新增机型或 URDF 修订时，把 URDF 加入 `lookie_description`，再新建 `config/<model>/` 目录并重新编译即可，代码中没有机型列表。
 
-## VR 遥操
+## VR 遥操作
 
 ```bash
 ros2 launch lookie_bringup teleop.launch.py
@@ -125,6 +127,4 @@ teleop:
     - teleop.yaml
 ```
 
-`teleop.yaml` 存放机型相关的值：`body_axes`（头盔可驱动的轴）与末端执行器（`ee_modules`、`ee_open`、`ee_close`）。
-
-`sim:=true` 时滑块初值为 `initial` 位姿，Center 按钮回到该位姿。
+`teleop.yaml` 存放机型相关的值：`body_axes`（头显可驱动的轴）与末端执行器（`ee_modules`、`ee_open`、`ee_close`）。

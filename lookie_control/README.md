@@ -1,6 +1,8 @@
 # lookie_control
 
-Runs [kstone_ros](https://github.com/AgilexOpensource/kstone_ros) whole-body control from an explicit engine config, URDF, namespace and topics. It holds no model list or config files. [中文](README.zh-CN.md)
+[中文](README.zh-CN.md)
+
+Runs [kstone_ros](https://github.com/AgilexOpensource/kstone_ros) whole-body control from an explicit engine config, URDF, namespace and topics. It holds no model list or config files.
 
 ## Install
 

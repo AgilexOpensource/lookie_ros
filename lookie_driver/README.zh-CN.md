@@ -1,6 +1,8 @@
 # lookie_driver
 
-按给定的配置文件启动 Lookie 的头部、躯干、双臂、底盘和关节桥。[English](README.md)
+[English](README.md)
+
+按给定的配置文件启动 Lookie 的头部、躯干、双臂、底盘和关节桥。
 
 ## 安装
 

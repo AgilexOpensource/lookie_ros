@@ -1,6 +1,8 @@
 # lookie_teleop
 
-VR whole-body teleoperation for Lookie: turns [xr_media_ros](https://github.com/AgilexOpensource/xr_media_ros) headset and controller input into [kstone_ros](https://github.com/AgilexOpensource/kstone_ros) arm, waist, chassis and hand targets. [中文](README.zh-CN.md)
+[中文](README.zh-CN.md)
+
+VR whole-body teleoperation for Lookie: turns [xr_media_ros](https://github.com/AgilexOpensource/xr_media_ros) headset and controller input into [kstone_ros](https://github.com/AgilexOpensource/kstone_ros) arm, waist, chassis and end-effector targets.
 
 ## Install
 
@@ -27,9 +29,10 @@ ros2 launch lookie_teleop teleop.launch.py namespace:=trio params_file:=/abs/a.y
 
 - Input: XR poses `<xr_namespace>/*/transform` and controller buttons `<xr_namespace>/{left,right}_controller/buttons`; `xr_namespace` defaults to `/xr_media`.
 - kstone: reads `<kstone_namespace>/discover` and `<kstone_namespace>/state`, publishes the pose, joint and velocity targets listed there, and calls `<kstone_namespace>/<module>/home`; `kstone_namespace` defaults to `kstone`.
+- Haptics: publishes controller pulses on `<xr_namespace>/{left,right}_controller/haptic` to confirm long presses and grip engagement.
 - Status: `~/status`.
 
 ## Documentation
 
 - [VR teleop quick start](docs/vr_teleop_quickstart.md)
-- [VR teleop design](docs/vr_teleop_dev_design.md) (Chinese)
+- [VR teleop design](docs/vr_teleop_dev_design.md)

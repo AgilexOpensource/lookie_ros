@@ -1,6 +1,8 @@
 # lookie_driver
 
-Starts the Lookie head, torso, dual arms, chassis and joint bridge from explicit config files. [中文](README.zh-CN.md)
+[中文](README.zh-CN.md)
+
+Starts the Lookie head, torso, dual arms, chassis and joint bridge from explicit config files.
 
 ## Install
 

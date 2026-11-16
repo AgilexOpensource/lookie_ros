@@ -1,6 +1,8 @@
 # lookie_bringup
 
-Whole-robot launch files for Lookie: drivers with optional RViz, joint sliders without a robot, kstone_ros whole-body control and VR teleop, each using the config of the selected model. [中文](README.zh-CN.md)
+[中文](README.zh-CN.md)
+
+Whole-robot launch files for Lookie: drivers with optional RViz, joint sliders without a robot, kstone_ros whole-body control and VR teleop, each using the config of the selected model.
 
 ## Install
 
@@ -34,7 +36,7 @@ ros2 launch lookie_bringup lookie.launch.py
 
 This starts `lookie_driver` and `robot_state_publisher` from `lookie_description` `display.launch.py`, which follows `driver/feedback/joint_states` and never publishes commands. `rviz:=true` also opens RViz.
 
-Without a robot, `sim:=true` skips the drivers and starts joint sliders at the `initial` pose. The sliders publish `driver/feedback/joint_states`, so kstone and RViz see them as the robot:
+Without a robot, `sim:=true` skips the drivers and starts joint sliders at the `initial` pose; the Center button returns to it. The sliders publish `driver/feedback/joint_states`, so kstone and RViz see them as the robot:
 
 ```bash
 ros2 launch lookie_bringup lookie.launch.py sim:=true rviz:=true
@@ -126,5 +128,3 @@ teleop:
 ```
 
 `teleop.yaml` holds the model-specific values: `body_axes` (axes the headset may drive) and the end effector (`ee_modules`, `ee_open`, `ee_close`).
-
-With `sim:=true`, the sliders start at the `initial` pose and the Center button returns to it.
