@@ -36,7 +36,7 @@ Lookie 机器人（Trio 和 Neo）的 ROS 2 功能包：驱动、基于 kstone �
 
 ## 快速开始
 
-安装脚本已完成第 1 步。
+使用安装脚本时第 1 步已完成，改为在每个终端执行 `source <工作空间>/lookie_env.bash`（其中已设置 `LOOKIE_MODEL`）。
 
 1. 选定机型，只需一次。[lookie_bringup/config](lookie_bringup/config) 下每个文件夹对应一个机型：
 

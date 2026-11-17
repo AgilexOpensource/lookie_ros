@@ -42,22 +42,39 @@ To use one package only, import its own file instead of `lookie.repos`:
 
 ## Python SDKs
 
-A virtual environment keeps the system Python clean and still sees the ROS Python packages:
+By default the SDKs go into the system Python, as on production robots. Production installs the tested versions from [requirements.lock.txt](../requirements.lock.txt):
+
+```bash
+cd ~/lookie_ws
+pip3 install -r src/lookie_ros/requirements.lock.txt   # production: pinned versions
+pip3 install -r src/lookie_ros/requirements.txt        # or: latest from each default branch
+```
+
+Without `sudo`, pip installs into `~/.local` of the current user; run the robot as that user.
+
+**Optional, for development:** a workspace venv keeps SDK versions under test out of the system Python and still sees the ROS Python packages:
 
 ```bash
 cd ~/lookie_ws
 python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
-pip install git+https://github.com/agilexrobotics/pyAgxArm.git \
-  git+https://github.com/kehuanjack/agx_motor_sdk.git bc-stark-sdk \
-  git+https://github.com/AgilexOpensource/xr_media.git 'numpy<2' 'setuptools<80'
+pip install -r src/lookie_ros/requirements.txt
 ```
 
-Without a venv, run the same `pip install` with `pip3` and use plain `colcon` below.
+With a venv, activate it before building and before running (below). [requirements.txt](../requirements.txt) lists all SDKs and follows their default branches.
+
+[requirements.lock.txt](../requirements.lock.txt) pins each git SDK to a commit and each PyPI SDK to a version. After verifying a set of versions on the robot, regenerate it from that environment and commit it:
+
+```bash
+python3 src/lookie_ros/scripts/lock_python.py                # versions installed in this Python
+python3 src/lookie_ros/scripts/lock_python.py --from remote  # current HEAD / latest release
+```
+
+The default mode refuses SDKs installed from a local directory, since their version cannot be reproduced; reinstall them from a git commit first.
 
 ## HTTPS for VR
 
-Before the first VR session, activate the workspace venv and generate a development certificate:
+Before the first VR session, generate a development certificate (activate the workspace venv first if you use one):
 
 ```bash
 xr_media --init-certs
@@ -75,9 +92,9 @@ python3 -m colcon build
 source install/setup.bash
 ```
 
-`python3 -m colcon` makes the nodes use the venv Python. Add `--packages-up-to <package>` to build one package and its dependencies. `--skip-keys` skips `xr_media`, which pip already installed, and `warehouse_ros_mongo`, which the agx_arm_ros MoveIt package declares but Humble does not ship.
+`python3 -m colcon` makes the nodes use the Python that runs colcon: the venv Python when it is active, otherwise the system Python. Build the workspace always in the same environment. Add `--packages-up-to <package>` to build one package and its dependencies. `--skip-keys` skips `xr_media`, which pip already installed, and `warehouse_ros_mongo`, which the agx_arm_ros MoveIt package declares but Humble does not ship.
 
-In every new terminal, run `source ~/lookie_ws/.venv/bin/activate` before `source ~/lookie_ws/install/setup.bash`, or add both lines to `~/.bashrc`. Then set the model as described in [lookie_bringup](../lookie_bringup/README.md#usage).
+In every terminal that runs Lookie, run `source ~/lookie_ws/install/setup.bash`; with a venv, run `source ~/lookie_ws/.venv/bin/activate` first. Avoid activating the venv in `~/.bashrc` on shared machines: it changes the Python of every terminal, including other modules that do not use it. Then set the model as described in [lookie_bringup](../lookie_bringup/README.md#usage).
 
 ## Update
 

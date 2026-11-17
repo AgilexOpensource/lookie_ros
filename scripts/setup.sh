@@ -13,16 +13,15 @@ TESTED="Ubuntu 22.04 with ROS 2 Humble"
 OLD_DISTROS=(ardent bouncy crystal dashing eloquent foxy galactic)
 APT_PKGS=(build-essential cmake libasio-dev libyaml-cpp-dev python3-dev
   python3-vcstool python3-colcon-common-extensions python3-rosdep python3-venv python3-pip)
-PIP_PKGS=(
-  "git+https://github.com/agilexrobotics/pyAgxArm.git"
-  "git+https://github.com/kehuanjack/agx_motor_sdk.git"
-  bc-stark-sdk
-  "git+https://github.com/AgilexOpensource/xr_media.git"
-  "numpy<2" "setuptools<80"
-)
-BASHRC="$HOME/.bashrc"
-MARK_BEGIN="# >>> lookie >>>"
-MARK_END="# <<< lookie <<<"
+# Python SDKs; LOOKIE_LOCKED=1 installs the pinned versions instead (release, production).
+# They go into the system Python unless a venv is chosen: LOOKIE_VENV=1 (yes) / 0 (no) skips the prompt.
+PIP_REQUIREMENTS="$REPO_DIR/requirements.txt"
+[[ "${LOOKIE_LOCKED:-0}" == 1 ]] && PIP_REQUIREMENTS="$REPO_DIR/requirements.lock.txt"
+# Per-terminal environment: venv (if used), workspace and model. Never written to ~/.bashrc,
+# so other users and modules on this machine keep their own Python setup.
+ENV_FILE="$WS/lookie_env.bash"
+# Block written to ~/.bashrc by older versions of this script.
+OLD_MARK_BEGIN="# >>> lookie >>>"
 
 info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mWarning:\033[0m %s\n' "$*"; }
@@ -31,6 +30,11 @@ confirm() {
   local reply
   read -rp "$1 [Y/n] " reply
   [[ -z "$reply" || "$reply" =~ ^[Yy] ]]
+}
+confirm_no() {
+  local reply
+  read -rp "$1 [y/N] " reply
+  [[ "$reply" =~ ^[Yy] ]]
 }
 
 find_ros() {
@@ -107,22 +111,26 @@ externally_managed() {
 }
 
 install_python() {
+  # Default: the system Python (production). A workspace venv is optional, for development.
+  if use_venv && [[ "${LOOKIE_VENV:-}" == 0 ]]; then
+    die "LOOKIE_VENV=0 but $VENV exists and would be used; remove it for a system Python install."
+  fi
   if ! use_venv; then
-    echo "Python SDKs go into a virtual environment (recommended) or the system Python."
+    echo "Python SDKs go into the system Python (default, production) or a workspace venv (development)."
     if externally_managed; then
-      info "The system Python is externally managed; creating $VENV."
+      info "The system Python is externally managed and refuses pip; creating $VENV."
       python3 -m venv --system-site-packages "$VENV"
-    elif confirm "Create the virtual environment $VENV?"; then
+    elif [[ "${LOOKIE_VENV:-}" == 1 ]] || { [[ -z "${LOOKIE_VENV:-}" ]] && confirm_no "Use a virtual environment $VENV (development)?"; }; then
       python3 -m venv --system-site-packages "$VENV"
     fi
   fi
   activate_python
   if use_venv; then
-    info "Installing Python SDKs into $VENV."
-    python3 -m pip install "${PIP_PKGS[@]}"
+    info "Installing Python SDKs from $(basename "$PIP_REQUIREMENTS") into $VENV."
+    python3 -m pip install -r "$PIP_REQUIREMENTS"
   else
-    info "Installing Python SDKs into the system Python."
-    pip3 install "${PIP_PKGS[@]}"
+    info "Installing Python SDKs from $(basename "$PIP_REQUIREMENTS") into the system Python."
+    pip3 install -r "$PIP_REQUIREMENTS"
   fi
 }
 
@@ -159,22 +167,39 @@ choose_model() {
   die "No model selected."
 }
 
-write_bashrc() {
-  local model="$1" block tmp
-  block="$MARK_BEGIN"$'\n'
-  use_venv && block+="source $VENV/bin/activate"$'\n'
-  block+="source $WS/install/setup.bash"$'\n'
-  block+="export LOOKIE_MODEL=$model"$'\n'
-  block+="$MARK_END"
-  tmp="$(mktemp "$HOME/.bashrc.lookie.XXXXXX")"
-  [[ -f "$BASHRC" ]] && sed "/^$MARK_BEGIN\$/,/^$MARK_END\$/d" "$BASHRC" > "$tmp"
-  printf '%s\n' "$block" >> "$tmp"
-  cat "$tmp" > "$BASHRC"
-  rm -f "$tmp"
-  info "Updated $BASHRC: LOOKIE_MODEL=$model. Open a new terminal or run: source ~/.bashrc"
+write_env() {
+  local model="$1" tmp
+  tmp="$(mktemp "$WS/.lookie_env.XXXXXX")"
+  # Paths resolve from the file's own location when sourced, so the workspace can live anywhere.
+  cat > "$tmp" <<ENV
+# Lookie workspace environment, written by lookie_ros/scripts/setup.sh (option 4 changes the model).
+# Load it in each terminal that runs Lookie: source <workspace>/lookie_env.bash
+if [ -z "\${BASH_VERSION:-}" ]; then
+  echo "lookie_env.bash: source it from bash" >&2
+  return 1 2>/dev/null || exit 1
+fi
+_lookie_ws="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "\$_lookie_ws/.venv/bin/activate" ]; then
+  source "\$_lookie_ws/.venv/bin/activate"
+fi
+if [ -f "\$_lookie_ws/install/setup.bash" ]; then
+  source "\$_lookie_ws/install/setup.bash"
+else
+  echo "lookie_env.bash: \$_lookie_ws/install/setup.bash not found; build the workspace first" >&2
+fi
+export LOOKIE_MODEL=$model
+unset _lookie_ws
+ENV
+  mv "$tmp" "$ENV_FILE"
+  info "Wrote $ENV_FILE: LOOKIE_MODEL=$model."
+  info "In each terminal that runs Lookie: source $ENV_FILE"
+  if [[ -f "$HOME/.bashrc" ]] && grep -qxF "$OLD_MARK_BEGIN" "$HOME/.bashrc"; then
+    warn "~/.bashrc still has a '$OLD_MARK_BEGIN' block from an older setup.sh that activates the venv"
+    warn "in every terminal. Delete that block unless every module on this machine should use the venv."
+  fi
 }
 
-set_model() { write_bashrc "$(choose_model)"; }
+set_model() { write_env "$(choose_model)"; }
 
 full_install() {
   install_apt
@@ -183,7 +208,7 @@ full_install() {
   install_rosdeps
   build
   set_model
-  info "Done. Bring up CAN, then in a new terminal: ros2 launch lookie_bringup lookie.launch.py"
+  info "Done. Bring up CAN, then in a new terminal: source $ENV_FILE && ros2 launch lookie_bringup lookie.launch.py"
 }
 
 main() {

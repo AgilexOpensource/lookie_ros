@@ -1,0 +1,9 @@
+# Python SDKs for the Lookie workspace (development: follows each default branch).
+# Pinned versions for release and production: requirements.lock.txt (scripts/lock_python.py).
+pyAgxArm @ git+https://github.com/agilexrobotics/pyAgxArm.git
+agx_motor_sdk @ git+https://github.com/kehuanjack/agx_motor_sdk.git
+bc-stark-sdk
+xr_media @ git+https://github.com/AgilexOpensource/xr_media.git
+# Constraints, not SDKs: ROS Humble needs numpy 1.x; newer setuptools breaks colcon builds.
+numpy<2
+setuptools<80

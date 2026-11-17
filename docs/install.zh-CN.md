@@ -42,22 +42,39 @@ vcs import --recursive < lookie_ros/lookie.repos
 
 ## Python SDK
 
-虚拟环境不改动系统 Python，同时仍能使用 ROS 的 Python 包：
+默认装到系统 Python，与生产机器一致。生产部署安装 [requirements.lock.txt](../requirements.lock.txt) 中已验证的版本：
+
+```bash
+cd ~/lookie_ws
+pip3 install -r src/lookie_ros/requirements.lock.txt   # 生产：固定版本
+pip3 install -r src/lookie_ros/requirements.txt        # 或：各默认分支的最新版本
+```
+
+不加 `sudo` 时，pip 装到当前用户的 `~/.local`；机器人要以该用户运行。
+
+**可选，开发用：** 工作空间虚拟环境把调试中的 SDK 版本与系统 Python 隔离，同时仍能使用 ROS 的 Python 包：
 
 ```bash
 cd ~/lookie_ws
 python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
-pip install git+https://github.com/agilexrobotics/pyAgxArm.git \
-  git+https://github.com/kehuanjack/agx_motor_sdk.git bc-stark-sdk \
-  git+https://github.com/AgilexOpensource/xr_media.git 'numpy<2' 'setuptools<80'
+pip install -r src/lookie_ros/requirements.txt
 ```
 
-不用虚拟环境时，用 `pip3` 执行同样的安装，下面改用 `colcon`。
+使用虚拟环境时，编译和运行前都要先激活它（见下文）。[requirements.txt](../requirements.txt) 列出全部 SDK，跟踪各自的默认分支。
+
+[requirements.lock.txt](../requirements.lock.txt) 把 git 来源的 SDK 固定到 commit，PyPI 来源的固定到版本号。一组版本在真机上验证通过后，在该环境中重新生成并提交：
+
+```bash
+python3 src/lookie_ros/scripts/lock_python.py                # 当前 Python 中已安装的版本
+python3 src/lookie_ros/scripts/lock_python.py --from remote  # 远端最新 HEAD / 最新发布版
+```
+
+默认模式会拒绝从本地目录安装的 SDK，因为无法复现其版本；先改为从 git commit 安装。
 
 ## VR 的 HTTPS 准备
 
-首次使用 VR 前，激活工作空间虚拟环境并生成开发证书：
+首次使用 VR 前生成开发证书（使用虚拟环境时先激活它）：
 
 ```bash
 xr_media --init-certs
@@ -75,9 +92,9 @@ python3 -m colcon build
 source install/setup.bash
 ```
 
-`python3 -m colcon` 让节点使用虚拟环境的 Python。加 `--packages-up-to <功能包>` 只编译该包及其依赖。`--skip-keys` 跳过已由 pip 安装的 `xr_media`，以及 agx_arm_ros 的 MoveIt 包声明、但 Humble 没有提供的 `warehouse_ros_mongo`。
+`python3 -m colcon` 让节点使用运行 colcon 的 Python：已激活虚拟环境时用虚拟环境的，否则用系统的。同一工作空间应始终在同一环境中编译。加 `--packages-up-to <功能包>` 只编译该包及其依赖。`--skip-keys` 跳过已由 pip 安装的 `xr_media`，以及 agx_arm_ros 的 MoveIt 包声明、但 Humble 没有提供的 `warehouse_ros_mongo`。
 
-每个新终端都要先执行 `source ~/lookie_ws/.venv/bin/activate`，再 `source ~/lookie_ws/install/setup.bash`，也可以把这两行写进 `~/.bashrc`。然后按 [lookie_bringup](../lookie_bringup/README.zh-CN.md#使用) 设置机型。
+在运行 Lookie 的终端中执行 `source ~/lookie_ws/install/setup.bash`；使用虚拟环境时先执行 `source ~/lookie_ws/.venv/bin/activate`。多人共用的机器上不要在 `~/.bashrc` 中激活虚拟环境：这会改变所有终端的 Python，包括不使用它的其他模块。然后按 [lookie_bringup](../lookie_bringup/README.zh-CN.md#使用) 设置机型。
 
 ## 更新
 
