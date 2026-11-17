@@ -76,6 +76,8 @@ flowchart LR
 | kstone 的目标、命令与求解质量 | [kstone_viewer](../README.zh-CN.md#可视化工具)（`kstone.launch.py debug_port:=7311`） |
 | install 是否与源码一致 | `python3 src/lookie_ros/scripts/check_install.py` |
 
+某个部位不动或突然停住时，按[反馈新鲜度与超时链](architecture.zh-CN.md#6-反馈新鲜度与超时链)逐层排查。
+
 ## 约定
 
 - 文档中英文成对维护（`*.md` 与 `*.zh-CN.md`），改一份时同步另一份。

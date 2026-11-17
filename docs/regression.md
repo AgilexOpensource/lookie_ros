@@ -32,7 +32,7 @@ Each package's `test/conftest.py` imports the source, not the install, so `pytho
 
 ## Cross-file check at launch
 
-`kstone.launch.py` checks that the joint bridge `feedback_timeout_s` is at most the `kstone.yaml` `feedback_timeout_s`. If not, it logs a warning and still starts. The bridge restamps cached feedback, so after a driver goes silent kstone detaches its group only after the sum of both timeouts, solving on the frozen joint positions until then; a larger bridge timeout makes this window longer.
+`kstone.launch.py` checks that the joint bridge `feedback_timeout_s` is at most the `kstone.yaml` `feedback_timeout_s`. If not, it logs a warning and still starts. The bridge restamps cached feedback, so after a driver goes silent kstone detaches its group only after the sum of both timeouts, solving on the frozen joint positions until then; a larger bridge timeout makes this window longer. For the full chain and latencies see [Feedback freshness and timeout chain](architecture.md#6-feedback-freshness-and-timeout-chain).
 
 ## Change checklist
 

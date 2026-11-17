@@ -200,3 +200,28 @@ flowchart LR
     DRV --> AR["agx_arm_ros"]
     DRV --> SR["scout_ros2"] --> UG["ugv_sdk"]
 ```
+
+## 6. Feedback freshness and timeout chain
+
+kstone sends commands to the drivers only while their feedback is fresh. Each layer judges freshness on its own; a timeout disables only the affected module or part, and the rest keeps running.
+
+```mermaid
+flowchart LR
+    HW["Hardware (CAN)"] -->|"0.5 s"| D["Drivers"]
+    D -->|"joints 0.15 s"| B["joint_bridge"]
+    B -->|"0.25 s"| K["kstone_ros"]
+    D -->|"odom 0.25 s"| K
+    K -->|"~/state 0.3 s"| T["lookie_teleop"]
+```
+
+| Layer | Basis | On timeout |
+|---|---|---|
+| Drivers | Whether hardware data is still updating | Stop publishing that module's feedback |
+| joint_bridge | Receipt time of each module's feedback | Leave the module out of the merged feedback |
+| kstone | Stamp of each feedback group | Detach the group; re-attach automatically after it stays fresh for a while |
+| lookie_teleop | Receipt time of `~/state` and the group states | Hold only the affected part; a `~/state` timeout disables teleop (see [teleop design §12](../lookie_teleop/docs/vr_teleop_dev_design.md)) |
+
+- **Latency:** until a dropout is detected, the system runs on the last received data, for up to about 1 s.
+- **Constraints:** the joint bridge timeout must not exceed kstone's (checked at startup, see [Regression checks](regression.md)); every timeout should be well above the matching publish period.
+- **Observe:** `groups` and `fault` in `/trio/kstone/state`, `/trio/lookie_teleop/status`, and `feedback lost / recovered` in the driver logs.
+- Simulation has no chassis odometry, so the `base` group is never fresh; this is expected.

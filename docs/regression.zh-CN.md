@@ -32,7 +32,7 @@ colcon test-result --verbose
 
 ## 启动时的跨文件检查
 
-`kstone.launch.py` 启动时检查关节桥 `feedback_timeout_s` 是否不大于 `kstone.yaml` 的 `feedback_timeout_s`。不满足时打印警告但仍启动。关节桥会给缓存的反馈重新打时间戳，驱动掉线后，kstone 要经过两个超时之和才让该组脱离控制，期间按冻结的关节位置继续计算；关节桥超时越大，这段时间越长。
+`kstone.launch.py` 启动时检查关节桥 `feedback_timeout_s` 是否不大于 `kstone.yaml` 的 `feedback_timeout_s`。不满足时打印警告但仍启动。关节桥会给缓存的反馈重新打时间戳，驱动掉线后，kstone 要经过两个超时之和才让该组脱离控制，期间按冻结的关节位置继续计算；关节桥超时越大，这段时间越长。完整的判断链和延迟见[反馈新鲜度与超时链](architecture.zh-CN.md#6-反馈新鲜度与超时链)。
 
 ## 改动验收清单
 

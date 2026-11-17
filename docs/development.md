@@ -76,6 +76,8 @@ Examples use `trio`; on Neo use `/neo`.
 | kstone targets, commands and solve quality | [kstone_viewer](../README.md#viewer) (`kstone.launch.py debug_port:=7311`) |
 | Whether the install matches the source | `python3 src/lookie_ros/scripts/check_install.py` |
 
+When a part does not move or stops suddenly, check each layer in [Feedback freshness and timeout chain](architecture.md#6-feedback-freshness-and-timeout-chain).
+
 ## Conventions
 
 - Docs come in pairs (`*.md` and `*.zh-CN.md`); update both together.

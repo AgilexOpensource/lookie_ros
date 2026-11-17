@@ -433,6 +433,8 @@ sequenceDiagram
 
 ## 12. Disable conditions
 
+> How the drivers, joint bridge and kstone judge feedback freshness, the timeouts at each layer and the worst-case latency: see [Feedback freshness and timeout chain](../../docs/architecture.md#6-feedback-freshness-and-timeout-chain).
+
 | Category | Condition (default) |
 | --- | --- |
 | XR headset | Timestamp regression; single-frame displacement > `jump_pos`=0.10 m or rotation > `jump_ang_deg`=30° (the headset threshold is not relaxed with time, so a recenter is always detected) |
