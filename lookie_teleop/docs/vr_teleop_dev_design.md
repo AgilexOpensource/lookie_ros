@@ -258,7 +258,7 @@ $$B_t = H_t\,R_{mount}^{-1},\qquad F_h(t)=\big(\mathrm{pos}(B_t),\;R_z(\mathrm{y
 | Check | Condition | If not met |
 | --- | --- | --- |
 | Devices | Headset and both controllers online, each with a transform within the last `xr_timeout_s` | Reject |
-| Motion control | `~/state` not timed out, no `fault`, `fresh=true` (`require_fresh`, may be turned off for pure simulation without drivers; the end effector feedback groups `ee_feedback_groups` are excepted), required modules `enabled` | Reject |
+| Motion control | `~/state` not timed out, no `fault`, `fresh=true` (`require_fresh`, may be turned off for pure simulation without drivers; the groups in `ee_feedback_groups` and `ignored_feedback_groups` are excepted), required modules `enabled` | Reject |
 | Mount angle | $\lvert\theta_m\rvert,\lvert\phi_m\rvert \le 35°$ | Reject |
 | Forward/backward | $0.15 \le x_i \le 0.70$ (controllers in front of the chest, not behind the body / against the body) | Reject |
 | Not crossed | $y_L - y_R \ge 0.10$ | Reject |
@@ -426,7 +426,7 @@ sequenceDiagram
 | --- | --- |
 | XR headset | Timestamp regression; single-frame displacement > `jump_pos`=0.10 m or rotation > `jump_ang_deg`=30° (the headset threshold is not relaxed with time, so a recenter is always detected) |
 | User | B short press |
-| Motion control | `~/state` timeout > `kstone_timeout_s`; `fault` non-empty; a feedback group other than the end effectors is stale (`require_fresh`, see below); a required module is disabled; a module is pre-empted by another source (`held_by` non-empty); torso or arm pose feedback is missing; the chassis keeps moving away from the target; Home / service request failure |
+| Motion control | `~/state` timeout > `kstone_timeout_s`; `fault` non-empty; a feedback group not listed in `ee_` / `ignored_` / `arm_` / `torso_` / `chassis_feedback_groups` (e.g. `default`) is stale (`require_fresh`, see below); a required module is disabled; a module is pre-empted by another source (`held_by` non-empty); torso or arm pose feedback is missing; the chassis keeps moving away from the target; Home / service request failure |
 
 Disable action: only stops publishing commands and **does not call the enable service**: arm / waist / chassis pose targets stop being published (kstone holds the last target), and the chassis is sent zero velocity once and then publishing stops; the end effectors still follow the index trigger; only B long press is accepted.
 
@@ -436,7 +436,16 @@ Disable action: only stops publishing commands and **does not call the enable se
 
 > Merely being clamped by the workspace does **not** count as a disable; releasing the grip trigger does **not** count as a disable either.
 >
-> An end effector going offline (e.g. a loose cable) does **not** disable: kstone puts each end effector in a separate feedback group (kstone.yaml `feedback_groups`), and when one goes offline only the joint commands of that end effector are stopped, with `fresh=false` for that group in `~/state.groups`; teleop ignores the groups in `ee_feedback_groups` (default `[left_hand, right_hand]`), the arms, waist and chassis are teleoperated as usual, and the end effector recovers automatically once reconnected. Staleness of the arms and waist (`default` group) or the chassis (`base` group) still causes a full disable.
+> An end effector going offline (e.g. a loose cable) does **not** disable: kstone puts each end effector in a separate feedback group (kstone.yaml `feedback_groups`), and when one goes offline only the joint commands of that end effector are stopped, with `fresh=false` for that group in `~/state.groups`; teleop ignores the groups in `ee_feedback_groups` (default `[left_hand, right_hand]`), the arms, waist and chassis are teleoperated as usual, and the end effector recovers automatically once reconnected.
+>
+> The other hardware modules also have their own groups (kstone.yaml: `torso`, `head`, `left_arm`, `right_arm`; the chassis is `base`), and kstone_ros forwards only the joints of attached groups, so a module going offline only stops itself. While Enabled, teleop handles them per part instead of disabling:
+>
+> - `arm_feedback_groups` (default `[left_arm, right_arm]`): that arm is stopped like a lost controller (double-press and hold the grip trigger after recovery). A group counts as recovered only once kstone reports it fresh **and** attached again. While held, the arm target follows kstone's own feedback pose every cycle (the open-loop hold while stale, the measured pose while the group settles), because kstone accepts targets while a group is unattached and rebases only once; so after recovery the arm stays where it is and an arm that moved while unpowered is not driven back without the operator.
+> - `torso_feedback_groups` (default `[torso]`): both arms are stopped, because their targets live in the torso frame, and the waist stick is ignored. The waist target likewise follows the torso feedback pose (the stick offset is kept), so after recovery the torso stays where it is. The arms stay attached and keep their frozen targets in the torso frame (not re-seeded from measured feedback, which would let a powered arm creep under gravity); double-press the grip trigger after recovery.
+> - `chassis_feedback_groups` (default `[base]`): only zero chassis velocity is sent; after recovery the base settles and the headset reference is recorded again.
+> - `ignored_feedback_groups` (default `[head]`): not driven by teleop, ignored.
+>
+> Any other stale group (e.g. `default`), a fault or a `~/state` timeout still causes a full disable. Long press A (enable) still requires every group except end effectors and ignored ones to be fresh. `~/status` reports `group_holds` for the torso / chassis.
 
 All checks are executed **first** in every Enabled cycle, regardless of whether the arms are Active; as soon as any disable condition is hit, teleop disables and returns, with no mapping and no publishing in that cycle, so a jump frame is never sent to motion control.
 
@@ -479,7 +488,7 @@ Defaults are taken from `PARAMS` in `lookie_teleop/node.py`; `lookie_bringup/con
 | Chassis | `chassis_scale` / `chassis_deadband_pos` / `chassis_deadband_deg` / `chassis_vx_max` / `chassis_vy_max` / `chassis_w_max` | 1.0 / 0.02 m / 2° / 0.5 / 0.5 / 1.0 (the three velocity limits in `common.yaml` are 1.0 / 0.8 / 2.0) |
 | Boundary | No parameters: the cube is derived from the Home points of the two arms at A (§9.2) | — |
 | Catch-up | `v_catch` / `w_catch` / `catch_pos_tol` / `catch_ori_tol_deg` / `catch_timeout_s` / `catch_fast_v` / `catch_fast_w` | 0.15 / 0.8 / 0.02 / 5 / 5.0 / 0.8 / 3.0 |
-| Safety | `xr_timeout_s` / `jump_pos` / `jump_ang_deg` / `jump_speed` / `jump_rate_deg` / `max_reach` / `kstone_timeout_s` / `require_fresh` / `ee_feedback_groups` | 0.5 / 0.10 / 30 / 6.0 / 1200 / 1.0 / 0.3 (state 30 Hz) / true / `[left_hand, right_hand]` |
+| Safety | `xr_timeout_s` / `jump_pos` / `jump_ang_deg` / `jump_speed` / `jump_rate_deg` / `max_reach` / `kstone_timeout_s` / `require_fresh` / `ee_feedback_groups` / `arm_feedback_groups` / `torso_feedback_groups` / `chassis_feedback_groups` / `ignored_feedback_groups` | 0.5 / 0.10 / 30 / 6.0 / 1200 / 1.0 / 0.3 (state 30 Hz) / true / `[left_hand, right_hand]` / `[left_arm, right_arm]` / `[torso]` / `[base]` / `[head]` |
 | Chassis publishing | `cmd_vel_min_hz` | 10 |
 | End effectors | `ee_modules` / `trigger_deadzone` | `[left_hand_joint, right_hand_joint]` / 0.05 |
 | End effector joints | `ee_open` / `ee_close` / `ee_lower` / `ee_upper` / `ee_joints_{left,right}` | All 0 / joint upper limit / discover limit / discover limit / discover joint names |

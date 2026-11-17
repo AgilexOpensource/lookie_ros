@@ -258,7 +258,7 @@ $$B_t = H_t\,R_{mount}^{-1},\qquad F_h(t)=\big(\mathrm{pos}(B_t),\;R_z(\mathrm{y
 | 检查 | 条件 | 不满足时 |
 | --- | --- | --- |
 | 设备 | 头显和两手柄在线、近 `xr_timeout_s` 内均有 transform | 拒绝 |
-| 运控 | `~/state` 未超时、无 `fault`、`fresh=true`（`require_fresh`，无驱动的纯仿真可关；末端执行器反馈组 `ee_feedback_groups` 除外）、所需模块 `enabled` | 拒绝 |
+| 运控 | `~/state` 未超时、无 `fault`、`fresh=true`（`require_fresh`，无驱动的纯仿真可关；`ee_feedback_groups` 和 `ignored_feedback_groups` 中的组除外）、所需模块 `enabled` | 拒绝 |
 | 挂载角 | $\lvert\theta_m\rvert,\lvert\phi_m\rvert \le 35°$ | 拒绝 |
 | 前后 | $0.15 \le x_i \le 0.70$（手柄在胸前，不在身后/贴身） | 拒绝 |
 | 不交叉 | $y_L - y_R \ge 0.10$ | 拒绝 |
@@ -426,7 +426,7 @@ sequenceDiagram
 | --- | --- |
 | XR 头显 | 时间戳回退；单帧位移 > `jump_pos`=0.10 m 或旋转 > `jump_ang_deg`=30°（头显不随时间放宽，所以重新居中一定能检出） |
 | 用户 | B 短按 |
-| 运控 | `~/state` 超时 > `kstone_timeout_s`；`fault` 非空；除末端执行器外的反馈组过期（`require_fresh`，见下）；所需模块被禁用；模块被其他来源抢占（`held_by` 非空）；缺少躯干或臂的位姿反馈；底盘持续背离目标运动；Home / 服务请求失败 |
+| 运控 | `~/state` 超时 > `kstone_timeout_s`；`fault` 非空；未列在 `ee_` / `ignored_` / `arm_` / `torso_` / `chassis_feedback_groups` 中的反馈组（如 `default`）过期（`require_fresh`，见下）；所需模块被禁用；模块被其他来源抢占（`held_by` 非空）；缺少躯干或臂的位姿反馈；底盘持续背离目标运动；Home / 服务请求失败 |
 
 失能动作：只停发命令，**不调用 enable 服务**——停发臂/腰/底盘位姿目标（kstone 保持最后目标），底盘发一次零速后停发；末端执行器仍跟随主扳机；只接受 B 长按。
 
@@ -436,7 +436,16 @@ sequenceDiagram
 
 > 只是被工作空间钳制 **不** 算失能；松开侧扳机也 **不** 算失能。
 >
-> 末端执行器掉线（如线缆松动）**不** 失能：kstone 把每个末端执行器放在单独的反馈组（kstone.yaml `feedback_groups`），掉线时只停该末端执行器的关节指令，`~/state.groups` 中该组 `fresh=false`；遥操作忽略 `ee_feedback_groups`（默认 `[left_hand, right_hand]`）中的组，臂、腰、底盘照常遥操作，末端执行器重新接上后自动恢复。臂、腰（`default` 组）或底盘（`base` 组）过期仍整体失能。
+> 末端执行器掉线（如线缆松动）**不** 失能：kstone 把每个末端执行器放在单独的反馈组（kstone.yaml `feedback_groups`），掉线时只停该末端执行器的关节指令，`~/state.groups` 中该组 `fresh=false`；遥操作忽略 `ee_feedback_groups`（默认 `[left_hand, right_hand]`）中的组，臂、腰、底盘照常遥操作，末端执行器重新接上后自动恢复。
+>
+> 其他硬件模块也各自成组（kstone.yaml：`torso`、`head`、`left_arm`、`right_arm`；底盘为 `base`），kstone_ros 只转发已接入组的关节，某个模块掉线只停它自己。已使能时遥操作按部位处理，不失能：
+>
+> - `arm_feedback_groups`（默认 `[left_arm, right_arm]`）：该臂按手柄丢失的方式停住（恢复后双击按住侧扳机重新接管）。kstone 报告该组重新新鲜**且**已接入后才算恢复。保持期间该臂目标每周期跟随 kstone 自身的反馈位姿（过期时为开环保持值，接入稳定期为实测位姿），因为 kstone 在组未接入时也接受目标且只重定一次基准；因此恢复后该臂停在原处，断电期间移动过的臂不会在操作者不知情时被拉回。
+> - `torso_feedback_groups`（默认 `[torso]`）：两臂停住（臂目标在躯干坐标系下），忽略腰部摇杆。腰部目标同样跟随躯干反馈位姿（保留摇杆偏移），恢复后躯干停在原处。两臂仍处于接入状态，保持躯干坐标系下冻结的目标（不按实测反馈重定，否则通电的臂会在重力下逐渐下垂）；恢复后双击侧扳机重新接管。
+> - `chassis_feedback_groups`（默认 `[base]`）：底盘只发零速；恢复后等底盘停稳，重新记录头显参考。
+> - `ignored_feedback_groups`（默认 `[head]`）：遥操作不驱动，忽略。
+>
+> 其他组（如 `default`）过期、故障或 `~/state` 超时仍整体失能。长按 A 使能时，除末端执行器和忽略的组外，所有组仍须新鲜。`~/status` 的 `group_holds` 报告躯干 / 底盘的保持状态。
 
 所有检查都在每个 已使能 周期**最先**执行，不论臂是否激活；任一失能条件命中即失能并 return，本周期不做映射、不发布，所以跳变帧永远不会发给运控。
 
@@ -479,7 +488,7 @@ Quest 长按 Home 键重新居中会重置 `local-floor` 参考空间：同一�
 | 底盘 | `chassis_scale` / `chassis_deadband_pos` / `chassis_deadband_deg` / `chassis_vx_max` / `chassis_vy_max` / `chassis_w_max` | 1.0 / 0.02 m / 2° / 0.5 / 0.5 / 1.0（`common.yaml` 的三个速度上限为 1.0 / 0.8 / 2.0） |
 | 边界 | 无参数：正方体由 A 时双臂 Home 点求出（§9.2） | — |
 | 追赶 | `v_catch` / `w_catch` / `catch_pos_tol` / `catch_ori_tol_deg` / `catch_timeout_s` / `catch_fast_v` / `catch_fast_w` | 0.15 / 0.8 / 0.02 / 5 / 5.0 / 0.8 / 3.0 |
-| 安全 | `xr_timeout_s` / `jump_pos` / `jump_ang_deg` / `jump_speed` / `jump_rate_deg` / `max_reach` / `kstone_timeout_s` / `require_fresh` / `ee_feedback_groups` | 0.5 / 0.10 / 30 / 6.0 / 1200 / 1.0 / 0.3（state 30 Hz） / true / `[left_hand, right_hand]` |
+| 安全 | `xr_timeout_s` / `jump_pos` / `jump_ang_deg` / `jump_speed` / `jump_rate_deg` / `max_reach` / `kstone_timeout_s` / `require_fresh` / `ee_feedback_groups` / `arm_feedback_groups` / `torso_feedback_groups` / `chassis_feedback_groups` / `ignored_feedback_groups` | 0.5 / 0.10 / 30 / 6.0 / 1200 / 1.0 / 0.3（state 30 Hz） / true / `[left_hand, right_hand]` / `[left_arm, right_arm]` / `[torso]` / `[base]` / `[head]` |
 | 底盘发布 | `cmd_vel_min_hz` | 10 |
 | 末端执行器 | `ee_modules` / `trigger_deadzone` | `[left_hand_joint, right_hand_joint]` / 0.05 |
 | 末端关节 | `ee_open` / `ee_close` / `ee_lower` / `ee_upper` / `ee_joints_{left,right}` | 全 0 / 关节上限 / discover 限位 / discover 限位 / discover 关节名 |

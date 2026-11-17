@@ -214,6 +214,17 @@ def test_waist_maps_forward_displacement_relative_unlimited_with_rate():
     assert pitch_only.position[0] == pytest.approx(0.0)
 
 
+def test_waist_hold_at_makes_the_measured_pose_the_held_target():
+    w = Waist([0.0, 0.0, 1.0], 0.0, 0.0, WaistConfig(z_rate=10.0, pitch_rate=10.0, yaw_rate=10.0), ALL_AXES)
+    w.add_offset("z", -0.1)
+    w.update(0.1, None)
+    w.hold_at([0.05, 0.0, 0.7], 0.2, 0.1)   # the torso sagged while its feedback was lost
+    for _ in range(5):
+        w.update(0.02, None)                 # held: no motion back to the old target
+    assert np.allclose(w.position, [0.05, 0.0, 0.7]) and np.allclose(w.target[1:], [0.2, 0.1])
+    assert w.offset[0] == pytest.approx(-0.1)
+
+
 def test_waist_neo_only_pitch():
     w = Waist([0.0, 0.0, 1.0], 0.0, 0.0, WaistConfig(z_rate=10, pitch_rate=10, yaw_rate=10), frozenset({"waist_pitch"}))
     w.set_body_reference(1.4, 0.0)
@@ -574,6 +585,47 @@ def test_kstone_health_ignores_end_effector_groups():
     assert "right_hand" in safety.kstone_health(hand_lost, 0.0, 0.3, True, [])
     body_lost = {**hand_lost, "groups": [*groups[:3], {"name": "default", "fresh": False}]}
     assert "default" in safety.kstone_health(body_lost, 0.0, 0.3, True, [], ignore_groups=ee)
+
+
+def test_stale_feedback_group_holds_only_its_part():
+    from types import SimpleNamespace
+    node = pytest.importorskip("lookie_teleop.node")
+    names = ["torso", "head", "left_arm", "right_arm", "left_hand", "right_hand", "base"]
+
+    def fake(*stale):
+        groups = [{"name": g, "fresh": g not in stale} for g in names]
+        f = SimpleNamespace(p=dict(node.PARAMS), kstate={**state(), "fresh": not stale, "groups": groups},
+                            kstate_t=0.0, _health_modules=lambda: [])
+        f._group_issues = lambda: node.TeleopNode._group_issues(f)
+        return f
+
+    f = fake("left_arm")
+    assert node.TeleopNode._kstone_reason(f, 0.0, scoped=True) is None
+    assert "left_arm" in node.TeleopNode._kstone_reason(f, 0.0)          # enabling still needs every part
+    assert set(node.TeleopNode._group_issues(f)) == {"left"}
+    assert set(node.TeleopNode._group_issues(fake("torso", "base"))) == {"torso", "chassis"}
+    # head and end effectors are not driven by teleop; unknown groups (e.g. default) still disable
+    f = fake("head", "right_hand")
+    assert node.TeleopNode._kstone_reason(f, 0.0) is None and node.TeleopNode._group_issues(f) == {}
+    names.append("default")
+    assert "default" in node.TeleopNode._kstone_reason(fake("default"), 0.0, scoped=True)
+    f = fake()
+    f.kstate["groups"][2]["attached"] = False   # fresh again but not yet reattached/rebased by kstone
+    assert set(node.TeleopNode._group_issues(f)) == {"left"}
+    f = fake("left_arm")
+    f.p["require_fresh"] = False
+    assert node.TeleopNode._group_issues(f) == {}
+
+
+def test_stale_chassis_group_sends_zero_and_settles_before_recording():
+    from types import SimpleNamespace
+    node = pytest.importorskip("lookie_teleop.node")
+    sent = []
+    f = SimpleNamespace(cmd_vel_pub=SimpleNamespace(publish=lambda m: None), stick_was_active=False,
+                        stick_settle=Settle(), profile=SimpleNamespace(chassis_velocity=None))
+    f._publish_twist = lambda cmd, now: sent.append(tuple(cmd))
+    node.TeleopNode._chassis(f, 0.3, 0.0, 0.5, np.eye(4), 0.02, 1.0, "kstone feedback group base stale")
+    assert sent == [(0.0, 0.0, 0.0)] and f.stick_was_active   # stick ignored; reference recorded after recovery
 
 
 def test_xr_monitor_timeout_jump_and_reach():

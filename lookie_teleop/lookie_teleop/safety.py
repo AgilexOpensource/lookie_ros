@@ -30,6 +30,15 @@ def kstone_health(state: dict | None, age: float, timeout_s: float, require_fres
     return None
 
 
+def stale_groups(state: dict | None, require_fresh: bool) -> list:
+    """Names of the kstone feedback groups not fresh or not yet attached again (empty if freshness is not
+    required). A group counts as recovered only once kstone has reattached it and rebased its modules."""
+    if not require_fresh or not state:
+        return []
+    return [g.get("name", "?") for g in state.get("groups") or ()
+            if not g.get("fresh", False) or not g.get("attached", True)]
+
+
 class XrMonitor:
     """XR link and tracking checks on the three transforms (headset, left, right).
 

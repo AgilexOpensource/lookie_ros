@@ -96,6 +96,13 @@ class Waist:
         """The body forward displacement passed to update() is measured from this moment."""
         self.x_ref_robot = self.base_x
 
+    def hold_at(self, position, pitch: float, yaw: float) -> None:
+        """Make the measured torso pose the held target (the stick offset is kept), so a held waist is
+        not driven back to an older target once its feedback recovers."""
+        self.target_x = self.base_x = float(position[0])
+        self.target = np.array([float(position[2]), float(pitch), float(yaw)])
+        self.base = self.target - np.array([self.offset[0], self.offset[1], 0.0])
+
     def _bounds(self, i: int):
         """Absolute [lo, hi] of z (i=0, range around A) or pitch (i=1, hard limits in the base frame)."""
         cfg = self.cfg

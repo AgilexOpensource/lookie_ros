@@ -29,7 +29,7 @@ from .home import HomeTracker, parse_request_id
 from .mapping import ArmMap, Chassis, ChassisConfig, Settle, Waist, WaistConfig, apply_deadzone, ee_target, \
     to_base
 from .profile import parse_discover
-from .safety import XrMonitor, kstone_health
+from .safety import XrMonitor, kstone_health, stale_groups
 from .transforms import matrix_to_quat, quat_to_matrix, yaw_of
 from .workspace import SIDES, Workspace, project
 
@@ -68,6 +68,9 @@ PARAMS = {
     "xr_timeout_s": 0.5, "jump_pos": 0.10, "jump_ang_deg": 30.0, "jump_speed": 6.0, "jump_rate_deg": 1200.0,
     "max_reach": 1.0,
     "kstone_timeout_s": 0.3, "require_fresh": True, "ee_feedback_groups": ["left_hand", "right_hand"],
+    # kstone feedback groups handled per part while enabled (design §12); any other stale group disables
+    "arm_feedback_groups": ["left_arm", "right_arm"], "torso_feedback_groups": ["torso"],
+    "chassis_feedback_groups": ["base"], "ignored_feedback_groups": ["head"],
     "cmd_vel_min_hz": 10.0, "trigger_deadzone": 0.05,
     # end effectors are never homed: they stay under the main trigger in every state
     "home_modules": ["torso_pose", "left_arm_pose", "right_arm_pose"],
@@ -178,6 +181,7 @@ class TeleopNode(Node):
         self.chassis = Chassis(self.chassis_cfg)
         self.dual_active = False
         self.stick_was_active = False
+        self.group_holds = {}                         # part -> reason its kstone feedback group is stale
         self.home = None
 
         self.xr = {k: None for k in XR_NAMES}        # name -> (4x4, header stamp, receive time)
@@ -353,10 +357,28 @@ class TeleopNode(Node):
     def _health_modules(self):
         return ["torso_pose", *ARM_MODULES.values(), *[h["module"] for h in self.ee.values()]]
 
-    def _kstone_reason(self, now):
+    def _kstone_reason(self, now, scoped=False):
+        """Reason to disable. ``scoped``: arm, torso and chassis groups are left to ``_group_issues``."""
         age = now - self.kstate_t if self.kstate_t is not None else math.inf
+        ignore = [*self.p["ee_feedback_groups"], *self.p["ignored_feedback_groups"]]
+        if scoped:
+            ignore += [*self.p["arm_feedback_groups"], *self.p["torso_feedback_groups"],
+                       *self.p["chassis_feedback_groups"]]
         return kstone_health(self.kstate, age, self.p["kstone_timeout_s"], self.p["require_fresh"],
-                             self._health_modules(), ignore_groups=self.p["ee_feedback_groups"])
+                             self._health_modules(), ignore_groups=ignore)
+
+    def _group_issues(self):
+        """Stale part-scoped kstone groups: ``left``/``right`` (that arm), ``torso`` and ``chassis`` -> reason."""
+        stale = stale_groups(self.kstate, self.p["require_fresh"])
+        out = {}
+        for s, g in zip(SIDES, self.p["arm_feedback_groups"]):
+            if g in stale:
+                out[s] = f"kstone feedback group {g} stale"
+        for part in ("torso", "chassis"):
+            names = [g for g in self.p[f"{part}_feedback_groups"] if g in stale]
+            if names:
+                out[part] = f"kstone feedback group {', '.join(names)} stale"
+        return out
 
     # ------------------------------------------------------------------ tick
     def _tick(self):
@@ -510,6 +532,7 @@ class TeleopNode(Node):
         self.dual_active = False
         self.stick_was_active = False
         self.stick_settle = Settle()
+        self.group_holds = {}
         self.state = ENABLED
         self.reason = ""
         self.get_logger().info("enabled" + (f" (note: {'; '.join(self.warnings)})" if self.warnings else ""))
@@ -535,6 +558,7 @@ class TeleopNode(Node):
         self.catch_aborts = {}
         self.dual_active = False
         self.clamped = set()
+        self.group_holds = {}
         if self.cmd_vel_pub is not None:
             self.cmd_vel_pub.publish(Twist())
 
@@ -566,19 +590,39 @@ class TeleopNode(Node):
     def _run_enabled(self, left, right, now, dt):
         # Every check runs before any mapping or publishing, so a bad frame never reaches kstone.
         issues = self._xr_issues(left, right, now)
-        reason = issues.get("headset") or self._kstone_reason(now)
+        reason = issues.get("headset") or self._kstone_reason(now, scoped=True)
         missing = [m for m in ("torso_pose", *ARM_MODULES.values()) if m not in self.fb]
         if reason is None and missing:
             reason = f"missing feedback {missing}"
         if reason is not None:
             self._disable(reason)
             return
+        groups = self._group_issues()
+        self._log_group_holds(groups)
+        for s in SIDES:
+            # a stale torso holds both arms: their targets live in the torso frame
+            r = groups.get(s) or groups.get("torso")
+            if r is not None:
+                issues.setdefault(s, r)
         for s in SIDES:
             if s in issues:
                 self._stop_arm(s, issues[s])
             elif s in self.arm_faults:
-                self.get_logger().info(f"{s} XR recovered; double-press the grip trigger to take over again")
+                self.get_logger().info(f"{s} arm recovered ({self.arm_faults[s]}); "
+                                       "double-press the grip trigger to take over again")
                 del self.arm_faults[s]
+        # kstone accepts targets even while a group is unattached and rebases only once, so a frozen
+        # target would be re-applied after recovery. While a group is detached, follow kstone's own
+        # state instead: the open-loop hold while stale, the measured pose while the group settles, so
+        # an arm or torso moved while unpowered is never driven back without the operator. Arms held
+        # only by a stale torso stay attached and keep their frozen target in F_t: re-seeding them
+        # from measured feedback every cycle would let them creep (e.g. sag under gravity).
+        for s in SIDES:
+            if s in groups:
+                self.arms[s] = Arm()          # _arms() re-seeds it from the feedback pose
+        if "torso" in groups:
+            torso = self.fb["torso_pose"]
+            self.waist.hold_at(torso[:3, 3], pitch_of(torso[:3, :3]), yaw_of(torso[:3, :3]))
 
         headset = self.xr["headset"][0]
         fh = self.mount.heading(headset)
@@ -598,7 +642,7 @@ class TeleopNode(Node):
         # sticks: left = translation, right x = yaw, right y = selected waist offset
         vx, vy, wz = self._stick_twist(left, right)
         ry = apply_deadzone(self._axis(right, AX_SY), self.p["deadzone"])
-        if ry:
+        if ry and "torso" not in groups:
             rate = self.p["joy_z_rate"] if self.stick_axis == "z" else self.p["joy_pitch_rate"]
             self.waist.add_offset(self.stick_axis, -ry * rate * dt)
 
@@ -616,7 +660,16 @@ class TeleopNode(Node):
         if not self._arms(now, dt, fh):
             return
         self._publish_pose("torso_pose", self.waist.position, matrix_to_quat(self.waist.rotation))
-        self._chassis(vx, vy, wz, fh, dt, now)
+        self._chassis(vx, vy, wz, fh, dt, now, groups.get("chassis"))
+
+    def _log_group_holds(self, groups):
+        for part in ("torso", "chassis"):
+            if part in groups and part not in self.group_holds:
+                held = "both arms and the waist stick" if part == "torso" else "chassis"
+                self.get_logger().warn(f"{held} held: {groups[part]}")
+            elif part in self.group_holds and part not in groups:
+                self.get_logger().info(f"{part} feedback recovered")
+        self.group_holds = {k: v for k, v in groups.items() if k in ("torso", "chassis")}
 
     def _stick_twist(self, left, right):
         dz = self.p["deadzone"]
@@ -630,7 +683,7 @@ class TeleopNode(Node):
         if self.cmd_vel_pub is None:
             return
         cmd = (0.0, 0.0, 0.0)
-        if self._kstone_reason(now) is None:
+        if self._kstone_reason(now, scoped=True) is None and "chassis" not in self._group_issues():
             lim = self.profile.chassis_velocity
             cmd = np.clip(self._stick_twist(left, right), lim.lower, lim.upper)
         self._publish_twist(cmd, now)
@@ -721,9 +774,18 @@ class TeleopNode(Node):
             pos, quat = matrix_to_pose(to_base(ft, arm.pos, quat_to_matrix(arm.quat)))
             self._publish_pose(ARM_MODULES[s], pos, quat)
 
-    def _chassis(self, vx, vy, wz, fh, dt, now):
-        """Stick has priority; else headset pose (chassis axis, both arms active, chassis mode); else zero Twist."""
+    def _chassis(self, vx, vy, wz, fh, dt, now, stale=None):
+        """Stick has priority; else headset pose (chassis axis, both arms active, chassis mode); else zero Twist.
+
+        ``stale``: the chassis feedback group is stale, so only a zero Twist is sent and the headset
+        reference is recorded again once it recovers.
+        """
         if self.cmd_vel_pub is None:
+            return
+        if stale is not None:
+            self.stick_was_active = True   # on recovery: settle, then record a fresh reference
+            self.stick_settle.reset(now)
+            self._publish_twist((0.0, 0.0, 0.0), now)
             return
         lim = self.profile.chassis_velocity
         cmd = np.clip([vx, vy, wz], lim.lower, lim.upper)
@@ -804,6 +866,7 @@ class TeleopNode(Node):
             "body_mode": self.body_mode,
             "stick_axis": self.stick_axis,
             "arm_faults": self.arm_faults,
+            "group_holds": self.group_holds,
             "catch_aborts": self.catch_aborts,
             "clamped": sorted(self.clamped),
             "reason": self.reason,

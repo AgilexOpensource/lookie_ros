@@ -123,6 +123,21 @@ def test_teleop_config_resolves(path):
     assert len(merged['ee_open']) == len(merged['ee_close'])
 
 
+@pytest.mark.parametrize('path', CONFIGS, ids=_model)
+def test_teleop_feedback_groups_match_kstone(path):
+    merged = {}
+    for p in load_teleop_config(path, _lookup).lookie_teleop:
+        merged.update(yaml.safe_load(p.read_text())['/**/lookie_teleop']['ros__parameters'])
+    groups = {g['name'] for g in yaml.safe_load((path.parent / 'kstone.yaml').read_text())['feedback_groups']}
+    groups.add('base')   # the free root forms its own group
+    keys = ('ee', 'arm', 'torso', 'chassis', 'ignored')
+    listed = [g for k in keys for g in merged[f'{k}_feedback_groups']]
+    assert len(merged['arm_feedback_groups']) == 2
+    assert len(listed) == len(set(listed))
+    # every kstone group is handled per part, so none falls back to a full disable
+    assert set(listed) == groups
+
+
 def test_teleop_missing_keys(tmp_path):
     path = tmp_path / 'bad.yaml'
     path.write_text('teleop: {xr_media: x}\n', encoding='utf-8')

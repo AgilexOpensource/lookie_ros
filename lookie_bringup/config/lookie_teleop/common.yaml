@@ -81,6 +81,12 @@
     kstone_timeout_s: 0.3
     require_fresh: true
     ee_feedback_groups: [left_hand, right_hand]   # kstone feedback groups whose loss only stops that hand
+    # kstone feedback groups (kstone.yaml) handled per part while enabled; any other stale group disables.
+    # Enabling (long press A) still needs every group fresh except end effectors and ignored ones.
+    arm_feedback_groups: [left_arm, right_arm]   # [left, right]: loss holds only that arm, then double-tap the grip
+    torso_feedback_groups: [torso]               # loss holds both arms (their targets live in the torso frame) and the waist stick
+    chassis_feedback_groups: [base]              # loss sends only zero chassis velocity
+    ignored_feedback_groups: [head]              # not driven by teleop
 
     # home
     home_modules: [torso_pose, left_arm_pose, right_arm_pose]   # end effectors are never homed
