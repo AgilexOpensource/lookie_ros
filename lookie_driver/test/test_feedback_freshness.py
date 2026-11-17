@@ -45,3 +45,16 @@ def test_fresh_module_resumes_after_expiry():
         JointBridgeNode._on_module_feedback(node, module, JointState(name=["local"], position=[0.7]))
         JointBridgeNode._publish_merged_feedback(node)
     assert list(messages[-1].position) == [0.7]
+
+
+def test_silent_module_is_dropped_while_others_continue():
+    node, module, messages = bridge()
+    node._feedback_timeout_s = 0.15
+    other = BridgeModule("head", "/feedback2", "/control2", {"h": "head"}, {"head": "h"}, {"head"})
+    node._modules.append(other)
+    with patch("lookie_driver.joint_bridge_node.time.monotonic", return_value=1.0):
+        JointBridgeNode._on_module_feedback(node, module, JointState(name=["local"], position=[0.4]))
+    with patch("lookie_driver.joint_bridge_node.time.monotonic", return_value=1.2):
+        JointBridgeNode._on_module_feedback(node, other, JointState(name=["h"], position=[0.1]))
+        JointBridgeNode._publish_merged_feedback(node)
+    assert messages[-1].name == ["head"]

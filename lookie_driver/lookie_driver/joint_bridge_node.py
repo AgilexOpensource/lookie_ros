@@ -134,7 +134,7 @@ class JointBridgeNode(Node):
         if feedback_rate <= 0.0:
             raise ValueError(f"feedback_rate must be > 0, got {feedback_rate}")
 
-        timeout = float(cfg.get("feedback_timeout_s", 0.5))
+        timeout = float(cfg.get("feedback_timeout_s", 0.15))
         self._feedback_timeout_s = float(self.declare_parameter("feedback_timeout_s", timeout).value)
         if not math.isfinite(self._feedback_timeout_s) or self._feedback_timeout_s <= 0.0:
             raise ValueError("feedback_timeout_s must be finite and positive")
@@ -213,6 +213,9 @@ class JointBridgeNode(Node):
         module.feedback_stamp = time.monotonic()
 
     def _publish_merged_feedback(self) -> None:
+        # Freshness is decided here per module (like the old ik_teleop bridge): a module silent for
+        # feedback_timeout_s is left out, so its joints age out downstream while the others continue.
+        # Keep feedback_timeout_s at or below kstone's, which only sees the republish time in the stamp.
         merged = JointState()
         merged.header.stamp = self.get_clock().now().to_msg()
         now = time.monotonic()

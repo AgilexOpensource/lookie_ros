@@ -6,6 +6,9 @@ namespace: neo/driver  # default node namespace; drivers.launch.py uses <namespa
 feedback_topic: feedback/joint_states
 control_topic: control/joint_states
 feedback_rate: 50.0
+# A module silent this long is dropped from the merged feedback. Keep it at or below
+# kstone.yaml feedback_timeout_s: kstone only sees the republish time in the stamp.
+feedback_timeout_s: 0.15
 
 modules:
   - name: lift

@@ -46,6 +46,13 @@ def test_kstone_config_per_model(path):
     assert load_kstone_config(path, _lookup) == path.parent / 'kstone.yaml'
 
 
+@pytest.mark.parametrize('path', CONFIGS, ids=_model)
+def test_bridge_drops_silent_modules_before_kstone_feedback_timeout(path):
+    bridge = yaml.safe_load((path.parent / 'driver_joint_bridge.yaml').read_text())
+    kstone = yaml.safe_load((path.parent / 'kstone.yaml').read_text())
+    assert 0 < bridge['feedback_timeout_s'] <= kstone['feedback_timeout_s']
+
+
 @pytest.mark.parametrize('value', [
     'package://lookie_description/../x.yaml',
     'package://lookie_description',
