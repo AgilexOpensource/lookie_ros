@@ -31,6 +31,8 @@ git clone https://github.com/AgilexOpensource/lookie_ros.git
 vcs import --recursive < lookie_ros/lookie.repos
 ```
 
+`lookie.repos` 跟踪开发分支。需要经过验证的版本（发布、生产）时，改为导入 [lookie.lock.repos](../lookie.lock.repos)，见[固定版本](#固定版本)。
+
 只用其中一个功能包时，改为导入它自己的文件：
 
 | 功能包 | 仓库列表 | Python SDK |
@@ -72,6 +74,28 @@ python3 src/lookie_ros/scripts/lock_python.py --from remote  # 远端最新 HEAD
 
 默认模式会拒绝从本地目录安装的 SDK，因为无法复现其版本；先改为从 git commit 安装。
 
+## 固定版本
+
+[lookie.lock.repos](../lookie.lock.repos) 把 `lookie.repos` 中的每个仓库固定到 commit，作用与 SDK 的 `requirements.lock.txt` 相同，两者配合使用：
+
+```bash
+cd ~/lookie_ws/src
+vcs import --recursive < lookie_ros/lookie.lock.repos     # 按固定的 commit 克隆
+python3 lookie_ros/scripts/lock_repos.py --check          # 已有仓库：列出不一致的
+python3 lookie_ros/scripts/lock_repos.py --checkout       # 检出固定的 commit（detached HEAD）
+```
+
+`--checkout` 不会改动有未提交修改的仓库。要回到开发状态，重新检出分支（`git checkout main`，或 `lookie.repos` 中写的分支）。
+
+工作空间在真机上验证通过后，先推送所有仓库，再从该工作空间重新生成并提交：
+
+```bash
+python3 src/lookie_ros/scripts/lock_repos.py                # 当前工作空间检出的 commit
+python3 src/lookie_ros/scripts/lock_repos.py --from remote  # 各分支的远端最新 commit
+```
+
+默认模式会拒绝有未提交修改、或 commit 不在远端分支上的仓库。
+
 ## VR 的 HTTPS 准备
 
 首次使用 VR 前生成开发证书（使用虚拟环境时先激活它）：
@@ -103,7 +127,7 @@ vcs pull ~/lookie_ws/src
 vcs import --recursive --skip-existing ~/lookie_ws/src < ~/lookie_ws/src/lookie_ros/lookie.repos
 ```
 
-第二条命令导入新增的依赖仓库。
+第二条命令导入新增的依赖仓库。使用固定版本时，只拉取 `lookie_ros`，再执行[固定版本](#固定版本)中的命令。
 
 > **重要：** 更新后必须重新编译全部功能包（`python3 -m colcon build`）。只更新或只编译部分仓库时，配置与程序版本可能不一致，例如 kstone 启动即报 `unknown key`。编译后用 `python3 src/lookie_ros/scripts/check_install.py` 确认 install 与源码一致，见[回归检查](regression.zh-CN.md)。
 

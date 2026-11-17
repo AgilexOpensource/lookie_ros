@@ -13,10 +13,16 @@ TESTED="Ubuntu 22.04 with ROS 2 Humble"
 OLD_DISTROS=(ardent bouncy crystal dashing eloquent foxy galactic)
 APT_PKGS=(build-essential cmake libasio-dev libyaml-cpp-dev python3-dev
   python3-vcstool python3-colcon-common-extensions python3-rosdep python3-venv python3-pip)
-# Python SDKs; LOOKIE_LOCKED=1 installs the pinned versions instead (release, production).
-# They go into the system Python unless a venv is chosen: LOOKIE_VENV=1 (yes) / 0 (no) skips the prompt.
+# Repositories and Python SDKs follow their branches; LOOKIE_LOCKED=1 uses the pinned commits and
+# versions instead (release, production).
+# The SDKs go into the system Python unless a venv is chosen: LOOKIE_VENV=1 (yes) / 0 (no) skips the prompt.
+LOCKED="${LOOKIE_LOCKED:-0}"
+REPOS_FILE="$REPO_DIR/lookie.repos"
 PIP_REQUIREMENTS="$REPO_DIR/requirements.txt"
-[[ "${LOOKIE_LOCKED:-0}" == 1 ]] && PIP_REQUIREMENTS="$REPO_DIR/requirements.lock.txt"
+if [[ "$LOCKED" == 1 ]]; then
+  REPOS_FILE="$REPO_DIR/lookie.lock.repos"
+  PIP_REQUIREMENTS="$REPO_DIR/requirements.lock.txt"
+fi
 # Per-terminal environment: venv (if used), workspace and model. Never written to ~/.bashrc,
 # so other users and modules on this machine keep their own Python setup.
 ENV_FILE="$WS/lookie_env.bash"
@@ -98,10 +104,22 @@ install_apt() {
 
 import_repos() {
   info "Fetching dependency repositories into $WS/src."
-  vcs import --recursive --skip-existing "$WS/src" < "$REPO_DIR/lookie.repos"
+  vcs import --recursive --skip-existing "$WS/src" < "$REPOS_FILE"
+  if [[ "$LOCKED" == 1 ]] && ! python3 "$REPO_DIR/scripts/lock_repos.py" --check; then
+    warn "Existing repositories above are not at the pinned commits. Choose 'Update repositories"
+    warn "and rebuild' with LOOKIE_LOCKED=1 to check them out."
+  fi
 }
 
 update_repos() {
+  if [[ "$LOCKED" == 1 ]]; then
+    info "Pulling lookie_ros, then checking out the pinned commits in $WS/src."
+    git -C "$REPO_DIR" pull --ff-only
+    vcs import --recursive --skip-existing "$WS/src" < "$REPOS_FILE"
+    python3 "$REPO_DIR/scripts/lock_repos.py" --checkout ||
+      warn "Some repositories were left unchanged; see above."
+    return
+  fi
   info "Pulling all repositories in $WS/src."
   vcs pull "$WS/src"
 }
@@ -228,7 +246,7 @@ main() {
     read -rp "Select an action: " reply || break
     case "$reply" in
       1) full_install ;;
-      2) update_repos; import_repos; build ;;
+      2) update_repos; [[ "$LOCKED" == 1 ]] || import_repos; build ;;
       3) build ;;
       4) set_model ;;
       5|q) break ;;

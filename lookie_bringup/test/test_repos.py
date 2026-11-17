@@ -25,6 +25,16 @@ def test_package_repos_cover_full_list():
     assert {p.stem for p in paths} == {'lookie_bringup', 'lookie_driver', 'lookie_control', 'lookie_teleop'}
 
 
+def test_repos_lock_pins_every_repository():
+    """lookie.lock.repos must pin exactly the repositories in lookie.repos, from the same URLs."""
+    full = _repos(ROOT / 'lookie.repos')
+    locked = _repos(ROOT / 'lookie.lock.repos')
+    assert set(locked) == set(full), 'regenerate: python3 scripts/lock_repos.py'
+    for name, entry in full.items():
+        assert locked[name]['url'] == entry['url'], f'{name}: lock URL differs from lookie.repos'
+        assert re.fullmatch(r'[0-9a-f]{40}', locked[name]['version']), f'{name}: not pinned to a commit'
+
+
 def _requirements(path: Path) -> dict:
     """``{name: requirement}`` for requirements.txt-style lines."""
     try:

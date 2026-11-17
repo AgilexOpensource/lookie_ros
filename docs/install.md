@@ -31,6 +31,8 @@ git clone https://github.com/AgilexOpensource/lookie_ros.git
 vcs import --recursive < lookie_ros/lookie.repos
 ```
 
+`lookie.repos` follows the development branches. For the tested commits (release, production), import [lookie.lock.repos](../lookie.lock.repos) instead, see [Pinned versions](#pinned-versions).
+
 To use one package only, import its own file instead of `lookie.repos`:
 
 | Package | Repositories | Python SDKs |
@@ -72,6 +74,28 @@ python3 src/lookie_ros/scripts/lock_python.py --from remote  # current HEAD / la
 
 The default mode refuses SDKs installed from a local directory, since their version cannot be reproduced; reinstall them from a git commit first.
 
+## Pinned versions
+
+[lookie.lock.repos](../lookie.lock.repos) pins every repository in `lookie.repos` to a commit, as `requirements.lock.txt` does for the SDKs. Use both together:
+
+```bash
+cd ~/lookie_ws/src
+vcs import --recursive < lookie_ros/lookie.lock.repos     # clone at the pinned commits
+python3 lookie_ros/scripts/lock_repos.py --check          # existing repositories: list differences
+python3 lookie_ros/scripts/lock_repos.py --checkout       # check out the pinned commits (detached HEAD)
+```
+
+`--checkout` leaves repositories with uncommitted changes untouched. To return to development, check out the branch again (`git checkout main`, or the branch in `lookie.repos`).
+
+After verifying a workspace on the robot, push every repository, then regenerate the lock from that workspace and commit it:
+
+```bash
+python3 src/lookie_ros/scripts/lock_repos.py                # commits checked out in this workspace
+python3 src/lookie_ros/scripts/lock_repos.py --from remote  # current head of each branch
+```
+
+The default mode refuses repositories with uncommitted changes or commits that are not on the remote branch.
+
 ## HTTPS for VR
 
 Before the first VR session, generate a development certificate (activate the workspace venv first if you use one):
@@ -103,7 +127,7 @@ vcs pull ~/lookie_ws/src
 vcs import --recursive --skip-existing ~/lookie_ws/src < ~/lookie_ws/src/lookie_ros/lookie.repos
 ```
 
-The second command imports dependency repositories added since the last install.
+The second command imports dependency repositories added since the last install. With pinned versions, pull only `lookie_ros`, then run the commands in [Pinned versions](#pinned-versions).
 
 > **Important:** Rebuild every package after updating (`python3 -m colcon build`). Updating or building only some repositories can leave configs and programs at different versions, for example kstone exiting at startup with `unknown key`. After building, confirm the install matches the source with `python3 src/lookie_ros/scripts/check_install.py`, see [Regression checks](regression.md).
 

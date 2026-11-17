@@ -82,4 +82,4 @@ flowchart LR
 
 - 文档中英文成对维护（`*.md` 与 `*.zh-CN.md`），改一份时同步另一份。
 - 各功能包的 `.repos` 文件必须与 [lookie.repos](../lookie.repos) 的条目一致，`test_repos.py` 会检查。
-- Python SDK 的版本：开发用 [requirements.txt](../requirements.txt)，发布用 [requirements.lock.txt](../requirements.lock.txt)，由 `scripts/lock_python.py` 生成，不要手改。
+- Python SDK 的版本：开发用 [requirements.txt](../requirements.txt)，发布用 [requirements.lock.txt](../requirements.lock.txt)，由 `scripts/lock_python.py` 生成，不要手改。仓库的 commit：[lookie.lock.repos](../lookie.lock.repos)，由 `scripts/lock_repos.py` 生成。在真机上验证一个发布版本后，两者都要重新生成。

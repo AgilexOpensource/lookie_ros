@@ -23,7 +23,7 @@ git clone https://github.com/AgilexOpensource/lookie_ros.git
 The Python SDKs go into the system Python by default. Production and development can be chosen in advance:
 
 ```bash
-LOOKIE_LOCKED=1 LOOKIE_VENV=0 ./lookie_ros/scripts/setup.sh   # production: system Python, pinned versions
+LOOKIE_LOCKED=1 LOOKIE_VENV=0 ./lookie_ros/scripts/setup.sh   # production: system Python, pinned commits and versions
 LOOKIE_VENV=1 ./lookie_ros/scripts/setup.sh                   # development: workspace venv
 ```
 
@@ -50,7 +50,7 @@ Before using VR, complete the [HTTPS preparation](install.md#https-for-vr). The 
 A full install runs these steps:
 
 1. Install missing apt packages (build tools, vcstool, colcon, rosdep, venv, pip), asking before `sudo`. Run `rosdep init` if it was never run.
-2. Import the repositories in [lookie.repos](../lookie.repos). Existing ones are left as they are.
+2. Import the repositories in [lookie.repos](../lookie.repos), or with `LOOKIE_LOCKED=1` the pinned commits in [lookie.lock.repos](../lookie.lock.repos). Existing ones are left as they are; with `LOOKIE_LOCKED=1` the script lists those not at the pinned commit, and "Update repositories and rebuild" checks them out.
 3. Install the Python SDKs from [requirements.txt](../requirements.txt), or with `LOOKIE_LOCKED=1` the pinned versions from [requirements.lock.txt](../requirements.lock.txt). They go into the system Python by default (production); the script asks whether to use a workspace venv `<workspace>/.venv` instead (development, answer `y`). `LOOKIE_VENV=1` or `LOOKIE_VENV=0` answers the question in advance. An existing `.venv` is reused. Only when the system Python refuses pip (Ubuntu 24.04 and later) is a venv created automatically.
 4. Install ROS dependencies with rosdep, skipping `xr_media` (installed by pip) and `warehouse_ros_mongo` (not shipped for Humble).
 5. Build with `python3 -m colcon build`.

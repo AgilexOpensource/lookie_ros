@@ -23,7 +23,7 @@ git clone https://github.com/AgilexOpensource/lookie_ros.git
 Python SDK 默认装到系统 Python。生产部署和开发可以预先指定：
 
 ```bash
-LOOKIE_LOCKED=1 LOOKIE_VENV=0 ./lookie_ros/scripts/setup.sh   # 生产：系统 Python + 固定版本
+LOOKIE_LOCKED=1 LOOKIE_VENV=0 ./lookie_ros/scripts/setup.sh   # 生产：系统 Python + 固定的 commit 和版本
 LOOKIE_VENV=1 ./lookie_ros/scripts/setup.sh                   # 开发：工作空间虚拟环境
 ```
 
@@ -50,7 +50,7 @@ ros2 launch lookie_bringup lookie.launch.py
 完整安装的步骤：
 
 1. 安装缺少的 apt 包（编译工具、vcstool、colcon、rosdep、venv、pip），使用 `sudo` 前先询问。从未执行过 `rosdep init` 时执行它。
-2. 导入 [lookie.repos](../lookie.repos) 中的仓库，已存在的仓库保持不变。
+2. 导入 [lookie.repos](../lookie.repos) 中的仓库；设置 `LOOKIE_LOCKED=1` 时按 [lookie.lock.repos](../lookie.lock.repos) 中固定的 commit 导入。已存在的仓库保持不变；设置 `LOOKIE_LOCKED=1` 时脚本会列出不在固定 commit 上的仓库，菜单项 "Update repositories and rebuild" 会检出固定的 commit。
 3. 按 [requirements.txt](../requirements.txt) 安装 Python SDK；设置 `LOOKIE_LOCKED=1` 时改装 [requirements.lock.txt](../requirements.lock.txt) 中固定的版本。默认装到系统 Python（生产）；脚本会询问是否改用工作空间虚拟环境 `<工作空间>/.venv`（开发，回答 `y`）。`LOOKIE_VENV=1` 或 `LOOKIE_VENV=0` 可预先回答。已有 `.venv` 时直接沿用。只有系统 Python 拒绝 pip 安装时（Ubuntu 24.04 及以上）才自动创建虚拟环境。
 4. 用 rosdep 安装 ROS 依赖，跳过已由 pip 安装的 `xr_media` 和 Humble 没有提供的 `warehouse_ros_mongo`。
 5. 用 `python3 -m colcon build` 编译。
