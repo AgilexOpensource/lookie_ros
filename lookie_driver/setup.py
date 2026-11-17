@@ -15,6 +15,7 @@ setup(
         (os.path.join("share", package_name, "launch"), glob("launch/*.py")),
     ],
     install_requires=["setuptools"],
+    tests_require=["pytest"],
     zip_safe=True,
     maintainer="Agilex Robotics",
     maintainer_email="contact@agilex.ai",

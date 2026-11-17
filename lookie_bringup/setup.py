@@ -18,6 +18,7 @@ setup(
           for d in sorted(glob("config/*/"))],
     ],
     install_requires=["setuptools"],
+    tests_require=["pytest"],
     zip_safe=True,
     maintainer="Agilex Robotics",
     maintainer_email="contact@agilex.ai",
