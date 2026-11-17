@@ -4,6 +4,8 @@
 
 Lookie 机器人（Trio 和 Neo）的 ROS 2 功能包：驱动、基于 kstone 的全身控制、RViz 和 VR 遥操作。
 
+整体流程框架图见 [docs/architecture.zh-CN.md](docs/architecture.zh-CN.md)；改动前后的回归检查见 [docs/regression.zh-CN.md](docs/regression.zh-CN.md)。
+
 ## 功能包
 
 | 功能包 | 说明 |
