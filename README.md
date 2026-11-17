@@ -54,13 +54,15 @@ With the setup script, step 1 is done: instead, run `source <workspace>/lookie_e
    ros2 run lookie_bringup can_bind.sh
    ```
 
+> **Warning: step 3 enables every motor as soon as the drivers start; in step 4 kstone controls the robot as soon as feedback arrives, and the arms first settle in null space for a few seconds.** Clear the area around the robot and keep an emergency stop within reach before starting.
+
 3. Terminal 1, drivers:
 
    ```bash
    ros2 launch lookie_bringup lookie.launch.py
    ```
 
-   Add `rviz:=true` to open RViz. Without a robot, add `sim:=true`: joint sliders replace the drivers and nothing is sent to hardware.
+   Add `rviz:=true` to open RViz. Without a robot, add `sim:=true`: joint sliders replace the drivers and nothing is sent to hardware. See [Without a robot](#without-a-robot) for its limits.
 
 4. Terminal 2, whole-body control. kstone holds the current pose once feedback arrives:
 
@@ -74,7 +76,15 @@ With the setup script, step 1 is done: instead, run `source <workspace>/lookie_e
    ros2 launch lookie_bringup teleop.launch.py
    ```
 
-Keep an emergency stop within reach.
+### Without a robot
+
+```bash
+ros2 launch lookie_bringup lookie.launch.py sim:=true rviz:=true fixed_frame:=base_footprint
+```
+
+- Joint sliders replace the drivers and publish the joint feedback; kstone and RViz treat them as the robot.
+- There is no chassis odometry: RViz needs `fixed_frame:=base_footprint` or it shows no robot, and kstone's `base` feedback group stays stale, so the state reports `fresh: false` and the chassis cannot move. This is expected.
+- kstone's joint commands do not reach the sliders: the robot in RViz follows the sliders only. To see what kstone commands, use [kstone_viewer](#viewer) below.
 
 ## VR teleop
 
@@ -107,7 +117,7 @@ Open http://127.0.0.1:8080. To view it from another computer, run `ssh -N -L 808
 ## Troubleshooting
 
 - **A driver exits at startup**: its CAN interface is down or misnamed. Run `ros2 run lookie_bringup can_bind.sh --list`.
-- **RViz shows no robot**: no chassis odometry is running. Add `fixed_frame:=base_footprint` to step 3.
+- **RViz shows no robot**: no chassis odometry is running (for example `sim:=true`). Add `fixed_frame:=base_footprint` to step 3.
 - **The robot does not follow kstone**: check `ros2 topic echo /trio/kstone/state --qos-durability transient_local` (`/neo/...` on Neo); it waits for joint feedback before it holds.
 - **The headset page does not load**: the headset and the robot must be on the same network, and the certificate must be trusted.
 

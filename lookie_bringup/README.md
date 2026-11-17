@@ -35,11 +35,13 @@ ros2 launch lookie_bringup lookie.launch.py
 
 This starts `lookie_driver` and `robot_state_publisher` from `lookie_description` `display.launch.py`, which follows `driver/feedback/joint_states` and never publishes commands. `rviz:=true` also opens RViz.
 
-Without a robot, `sim:=true` skips the drivers and starts joint sliders at the `initial` pose; the Center button returns to it. The sliders publish `driver/feedback/joint_states`, so kstone and RViz see them as the robot:
+Without a robot, `sim:=true` skips the drivers and starts joint sliders at the `initial` pose; the Center button returns to it. The sliders publish `driver/feedback/joint_states`, so kstone and RViz see them as the robot. There is no chassis odometry, so add `fixed_frame:=base_footprint`:
 
 ```bash
-ros2 launch lookie_bringup lookie.launch.py sim:=true rviz:=true
+ros2 launch lookie_bringup lookie.launch.py sim:=true rviz:=true fixed_frame:=base_footprint
 ```
+
+> **Note:** In simulation kstone's `base` feedback group stays stale (`fresh: false` in the state) and the chassis cannot move; kstone's joint commands do not reach the sliders either, so the robot in RViz follows the sliders only. Use [kstone_viewer](../README.md#viewer) to see what kstone commands.
 
 Launch arguments:
 

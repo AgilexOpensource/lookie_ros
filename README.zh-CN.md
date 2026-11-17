@@ -54,13 +54,15 @@ Lookie 机器人（Trio 和 Neo）的 ROS 2 功能包：驱动、基于 kstone �
    ros2 run lookie_bringup can_bind.sh
    ```
 
+> **警告：第 3 步启动驱动时全部电机即被使能；第 4 步 kstone 收到反馈后立即开始控制机器人，双臂会先在零空间调整几秒。** 启动前清空机器人周围，并确保急停在手边。
+
 3. 终端 1，驱动：
 
    ```bash
    ros2 launch lookie_bringup lookie.launch.py
    ```
 
-   需要 RViz 时加 `rviz:=true`。没有真机时加 `sim:=true`：用关节滑块代替驱动，不会向硬件发送任何指令。
+   需要 RViz 时加 `rviz:=true`。没有真机时加 `sim:=true`：用关节滑块代替驱动，不会向硬件发送任何指令。仿真的限制见[没有真机时](#没有真机时)。
 
 4. 终端 2，全身控制。收到反馈后 kstone 保持当前位姿：
 
@@ -74,7 +76,15 @@ Lookie 机器人（Trio 和 Neo）的 ROS 2 功能包：驱动、基于 kstone �
    ros2 launch lookie_bringup teleop.launch.py
    ```
 
-请确保急停在手边。
+### 没有真机时
+
+```bash
+ros2 launch lookie_bringup lookie.launch.py sim:=true rviz:=true fixed_frame:=base_footprint
+```
+
+- 关节滑块代替驱动发布关节反馈，kstone 和 RViz 把它当作真机。
+- 仿真没有底盘里程计：RViz 必须用 `fixed_frame:=base_footprint`，否则看不到机器人；kstone 的 `base` 反馈组一直不新鲜，state 中 `fresh` 为 `false`，底盘不可控。这是预期现象。
+- kstone 的关节命令不会回到滑块：RViz 中的机器人只跟随滑块。要查看 kstone 输出的命令，用下面的 [kstone_viewer](#可视化工具)。
 
 ## VR 遥操作
 
@@ -107,7 +117,7 @@ ros2 launch lookie_bringup kstone.launch.py debug_port:=7311
 ## 常见问题
 
 - **驱动启动后立即退出**：对应的 CAN 接口未启用或名称不对，运行 `ros2 run lookie_bringup can_bind.sh --list` 检查。
-- **RViz 中看不到机器人**：没有底盘里程计。第 3 步加上 `fixed_frame:=base_footprint`。
+- **RViz 中看不到机器人**：没有底盘里程计（例如 `sim:=true`）。第 3 步加上 `fixed_frame:=base_footprint`。
 - **机器人不跟随 kstone**：用 `ros2 topic echo /trio/kstone/state --qos-durability transient_local` 查看状态（Neo 为 `/neo/...`）；kstone 收到关节反馈后才会保持位姿。
 - **头显页面打不开**：头显和机器人需在同一网络，并且已信任证书。
 

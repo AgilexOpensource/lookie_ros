@@ -35,11 +35,13 @@ ros2 launch lookie_bringup lookie.launch.py
 
 启动 `lookie_driver` 和 `lookie_description` `display.launch.py` 中的 `robot_state_publisher`，它跟随 `driver/feedback/joint_states`，不发布任何指令。`rviz:=true` 时同时打开 RViz。
 
-没有真机时，`sim:=true` 不启动驱动，改为启动关节滑块，初值为 `initial` 位姿，Center 按钮回到该位姿。滑块发布到 `driver/feedback/joint_states`，kstone 和 RViz 会把它当作真机：
+没有真机时，`sim:=true` 不启动驱动，改为启动关节滑块，初值为 `initial` 位姿，Center 按钮回到该位姿。滑块发布到 `driver/feedback/joint_states`，kstone 和 RViz 会把它当作真机。仿真没有底盘里程计，需加 `fixed_frame:=base_footprint`：
 
 ```bash
-ros2 launch lookie_bringup lookie.launch.py sim:=true rviz:=true
+ros2 launch lookie_bringup lookie.launch.py sim:=true rviz:=true fixed_frame:=base_footprint
 ```
+
+> **注意：** 仿真中 kstone 的 `base` 反馈组一直不新鲜（state 中 `fresh: false`），底盘不可控；kstone 的关节命令也不会回到滑块，RViz 中的机器人只跟随滑块。查看 kstone 的命令用 [kstone_viewer](../README.zh-CN.md#可视化工具)。
 
 启动参数：
 
