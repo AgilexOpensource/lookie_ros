@@ -4,7 +4,7 @@
 
 ROS 2 packages for the Lookie robots (Trio and Neo): drivers, whole-body control with kstone, RViz and VR teleoperation.
 
-For the overall architecture and flow diagrams, see [docs/architecture.md](docs/architecture.md); for regression checks before and after a change, see [docs/regression.md](docs/regression.md).
+For the overall architecture and flow diagrams, see [docs/architecture.md](docs/architecture.md); for regression checks before and after a change, see [docs/regression.md](docs/regression.md); to start developing, see [docs/development.md](docs/development.md).
 
 ## Packages
 
