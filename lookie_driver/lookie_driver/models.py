@@ -95,6 +95,14 @@ def validate(robot_yaml, params_file, bridge_config, urdf_path=None) -> None:
                     f'{robot_yaml}: {name} limits [{lower}, {upper}] exceed '
                     f'URDF [{u_lower}, {u_upper}]')
 
+    # Only head_ros applies torque_limit (MIT current limit); lift/fold drivers would silently ignore it.
+    for key, module in _load_yaml(robot_yaml).items():
+        if key == HEAD_MODULE:
+            continue
+        unsupported = [str(j.get('joint_name')) for j in module.get('joints') or [] if 'torque_limit' in j]
+        if unsupported or 'torque_limit' in module:
+            errors.append(f'{robot_yaml}: {key}: torque_limit is not applied by this driver: {unsupported or key}')
+
     bridged = bridge_joints(bridge_config)
     flat = [name for names in bridged.values() for name in names]
     duplicated = sorted({name for name in flat if flat.count(name) > 1})

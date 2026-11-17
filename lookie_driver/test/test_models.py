@@ -106,6 +106,15 @@ def test_bridge_module_namespace_mismatch_rejected(tmp_path):
                  _write(tmp_path, 'bridge.yaml', bridge))
 
 
+def test_torque_limit_on_torso_rejected(tmp_path):
+    paths = _paths(MODELS[0])
+    motors = yaml.safe_load(paths['robot_yaml'].read_text(encoding='utf-8'))
+    torso = torso_key(paths['robot_yaml'])
+    motors[torso]['joints'][-1]['torque_limit'] = 50.0
+    with pytest.raises(ValueError, match='torque_limit is not applied'):
+        validate(_write(tmp_path, 'motors.yaml', motors), paths['params_file'], paths['bridge_config'])
+
+
 def test_missing_params_section_rejected(tmp_path):
     paths = _paths(MODELS[0])
     params = yaml.safe_load(paths['params_file'].read_text(encoding='utf-8'))

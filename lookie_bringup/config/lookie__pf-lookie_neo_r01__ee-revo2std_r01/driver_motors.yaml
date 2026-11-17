@@ -55,5 +55,4 @@ lift:
       lower_limit: -1.55225
       upper_limit: 1.55225
       torque_k: 1.0
-      torque_b: 50.0
-      torque_limit: 50.0
+      torque_b: 50.0  # effort estimate only; RB200 has no MIT/current limit (torque_limit unsupported)
