@@ -103,7 +103,9 @@ vcs pull ~/lookie_ws/src
 vcs import --recursive --skip-existing ~/lookie_ws/src < ~/lookie_ws/src/lookie_ros/lookie.repos
 ```
 
-然后重新编译。第二条命令导入新增的依赖仓库。
+第二条命令导入新增的依赖仓库。
+
+> **重要：** 更新后必须重新编译全部功能包（`python3 -m colcon build`）。只更新或只编译部分仓库时，配置与程序版本可能不一致，例如 kstone 启动即报 `unknown key`。编译后用 `python3 src/lookie_ros/scripts/check_install.py` 确认 install 与源码一致，见[回归检查](regression.zh-CN.md)。
 
 ## 常见问题
 

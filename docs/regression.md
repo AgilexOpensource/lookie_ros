@@ -6,7 +6,7 @@ Before and after changing drivers, configs, launch files or dependency repositor
 
 ## 1. Does the install match the source?
 
-`colcon build` copies files by default. After editing `src/` without rebuilding, the robot still runs the old code, and test results no longer describe it.
+> **Important:** `colcon build` copies files by default. After editing `src/` without rebuilding, the robot still runs the old code, and test results no longer describe it. With some packages rebuilt and others not, mixed versions can fail to start.
 
 ```bash
 python3 src/lookie_ros/scripts/check_install.py            # every package in the workspace

@@ -6,7 +6,7 @@
 
 ## 1. install 是否与源码一致
 
-`colcon build` 默认复制文件。只改 `src/` 不重新编译时，运行的仍是旧代码，测试结果也不能代表机器人上的行为。
+> **重要：** `colcon build` 默认复制文件。只改 `src/` 不重新编译时，机器人运行的仍是旧代码，测试结果也不能代表机器人上的行为。部分包更新、部分没有时，新旧版本混用可能直接启动失败。
 
 ```bash
 python3 src/lookie_ros/scripts/check_install.py            # 工作空间内全部功能包

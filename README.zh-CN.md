@@ -76,6 +76,8 @@ Lookie 机器人（Trio 和 Neo）的 ROS 2 功能包：驱动、基于 kstone �
    ros2 launch lookie_bringup teleop.launch.py
    ```
 
+> **重要：** 修改 `src/` 下的代码或配置后必须重新编译（`python3 -m colcon build`）才会生效，否则机器人运行的仍是旧版本，旧配置与新程序不匹配时可能直接启动失败。用 [check_install.py](docs/regression.zh-CN.md#1-install-是否与源码一致) 检查。
+
 ### 没有真机时
 
 ```bash
@@ -118,6 +120,7 @@ ros2 launch lookie_bringup kstone.launch.py debug_port:=7311
 
 - **驱动启动后立即退出**：对应的 CAN 接口未启用或名称不对，运行 `ros2 run lookie_bringup can_bind.sh --list` 检查。
 - **RViz 中看不到机器人**：没有底盘里程计（例如 `sim:=true`）。第 3 步加上 `fixed_frame:=base_footprint`。
+- **kstone 启动即退出，报 `unknown key` 或 `KST-E1xx`**：配置与 kstone 版本不一致，通常是只更新了部分仓库或没有重新编译。拉取全部仓库后重新编译，并运行 `python3 src/lookie_ros/scripts/check_install.py`。
 - **机器人不跟随 kstone**：用 `ros2 topic echo /trio/kstone/state --qos-durability transient_local` 查看状态（Neo 为 `/neo/...`）；kstone 收到关节反馈后才会保持位姿。
 - **头显页面打不开**：头显和机器人需在同一网络，并且已信任证书。
 

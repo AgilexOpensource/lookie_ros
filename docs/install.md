@@ -103,7 +103,9 @@ vcs pull ~/lookie_ws/src
 vcs import --recursive --skip-existing ~/lookie_ws/src < ~/lookie_ws/src/lookie_ros/lookie.repos
 ```
 
-Then build again. The second command imports dependency repositories added since the last install.
+The second command imports dependency repositories added since the last install.
+
+> **Important:** Rebuild every package after updating (`python3 -m colcon build`). Updating or building only some repositories can leave configs and programs at different versions, for example kstone exiting at startup with `unknown key`. After building, confirm the install matches the source with `python3 src/lookie_ros/scripts/check_install.py`, see [Regression checks](regression.md).
 
 ## Troubleshooting
 
