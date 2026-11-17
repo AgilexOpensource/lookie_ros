@@ -743,3 +743,20 @@ def test_double_tap_hold():
     assert events == [None, None, "engage", None, "release"]
     d = DoubleTapHold(0.4)
     assert [d.update(p, t) for p, t in ((True, 0.0), (False, 0.1), (True, 0.6))] == [None, None, None]
+
+
+def test_non_finite_or_degenerate_input_is_rejected():
+    from geometry_msgs.msg import TransformStamped
+    from sensor_msgs.msg import Joy
+    from lookie_teleop.node import _transform_to_matrix, _valid_joy
+
+    msg = TransformStamped()
+    msg.transform.rotation.w = 1.0
+    assert _transform_to_matrix(msg) is not None
+    msg.transform.translation.x = float("nan")
+    assert _transform_to_matrix(msg) is None
+    msg.transform.translation.x = 0.0
+    msg.transform.rotation.w = 0.0
+    assert _transform_to_matrix(msg) is None
+    assert _valid_joy(Joy(axes=[0.0, 0.5]))
+    assert not _valid_joy(Joy(axes=[0.0, float("inf")]))

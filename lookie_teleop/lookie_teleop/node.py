@@ -88,14 +88,28 @@ def _stamp_s(header) -> float:
     return header.stamp.sec + header.stamp.nanosec * 1e-9
 
 
-def _transform_to_matrix(msg: TransformStamped) -> np.ndarray:
+def _valid_pose(position, quat) -> bool:
+    """Finite position and a finite quaternion of usable length (it is normalized downstream)."""
+    values = np.asarray(list(position) + list(quat), dtype=float)
+    return bool(np.all(np.isfinite(values))) and np.linalg.norm(values[3:]) > 1e-6
+
+
+def _transform_to_matrix(msg: TransformStamped):
+    """Pose matrix of the transform, or None if it is non-finite or has a degenerate quaternion."""
     t, q = msg.transform.translation, msg.transform.rotation
-    return pose_to_matrix([t.x, t.y, t.z], [q.w, q.x, q.y, q.z])
+    position, quat = [t.x, t.y, t.z], [q.w, q.x, q.y, q.z]
+    return pose_to_matrix(position, quat) if _valid_pose(position, quat) else None
 
 
-def _pose_to_matrix(msg: PoseStamped) -> np.ndarray:
+def _pose_to_matrix(msg: PoseStamped):
+    """Pose matrix of the message, or None if it is non-finite or has a degenerate quaternion."""
     p, q = msg.pose.position, msg.pose.orientation
-    return pose_to_matrix([p.x, p.y, p.z], [q.w, q.x, q.y, q.z])
+    position, quat = [p.x, p.y, p.z], [q.w, q.x, q.y, q.z]
+    return pose_to_matrix(position, quat) if _valid_pose(position, quat) else None
+
+
+def _valid_joy(msg: Joy) -> bool:
+    return all(math.isfinite(v) for v in msg.axes)
 
 
 class Arm:
@@ -218,14 +232,26 @@ class TeleopNode(Node):
         return msg
 
     # ------------------------------------------------------------------ callbacks
+    # Invalid samples are dropped, not stored: the input then ages out like any other lost sample.
     def _on_xr(self, key, msg: TransformStamped):
-        self.xr[key] = (_transform_to_matrix(msg), _stamp_s(msg.header), self._now())
+        pose = _transform_to_matrix(msg)
+        if pose is None:
+            self.get_logger().warn("dropping non-finite XR pose: %s" % key, throttle_duration_sec=2.0)
+            return
+        self.xr[key] = (pose, _stamp_s(msg.header), self._now())
 
     def _on_joy(self, side, msg: Joy):
+        if not _valid_joy(msg):
+            self.get_logger().warn("dropping non-finite Joy axes: %s" % side, throttle_duration_sec=2.0)
+            return
         self.joy[side] = (msg, self._now())
 
     def _on_feedback(self, mid, msg: PoseStamped):
-        self.fb[mid] = _pose_to_matrix(msg)
+        pose = _pose_to_matrix(msg)
+        if pose is None:
+            self.get_logger().warn("dropping non-finite feedback pose: %s" % mid, throttle_duration_sec=2.0)
+            return
+        self.fb[mid] = pose
 
     def _on_state(self, msg: String):
         try:
