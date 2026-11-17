@@ -9,24 +9,24 @@ def kstone_health(state: dict | None, age: float, timeout_s: float, require_fres
                   modules: list, check_held: bool = True, ignore_groups=()) -> str | None:
     """``ignore_groups``: kstone feedback groups that may go stale without disabling (end effectors)."""
     if state is None or age > timeout_s:
-        return "运控状态超时"
+        return "kstone state timed out"
     if state.get("fault"):
-        return f"运控故障: {state['fault']}"
+        return f"kstone fault: {state['fault']}"
     if require_fresh:
         groups = state.get("groups")
         if groups:
             stale = [g.get("name", "?") for g in groups if not g.get("fresh", False) and g.get("name") not in ignore_groups]
             if stale:
-                return f"运控状态不新鲜 (fresh=false: {', '.join(stale)})"
+                return f"kstone state not fresh (fresh=false: {', '.join(stale)})"
         elif not state.get("fresh", False):
-            return "运控状态不新鲜 (fresh=false)"
+            return "kstone state not fresh (fresh=false)"
     mods = state.get("modules", {})
     for mid in modules:
         m = mods.get(mid)
         if m is None or not m.get("enabled", False):
-            return f"运控模块 {mid} 未启用"
+            return f"kstone module {mid} not enabled"
         if check_held and m.get("held_by"):
-            return f"运控模块 {mid} 被 {m['held_by']} 抢占"
+            return f"kstone module {mid} held by {m['held_by']}"
     return None
 
 
@@ -56,7 +56,7 @@ class XrMonitor:
 
     def stale_issues(self, stamps: dict, now: float) -> dict:
         """``stamps``: name -> receive time (node clock) or None. Returns name -> reason."""
-        return {name: f"XR {name} 数据超时" for name, t in stamps.items()
+        return {name: f"XR {name} data timed out" for name, t in stamps.items()
                 if t is None or now - t > self.timeout_s}
 
     def stale(self, stamps: dict, now: float) -> str | None:
@@ -74,21 +74,21 @@ class XrMonitor:
             if last is not None:
                 last_pose, last_stamp = last
                 if stamps[name] < last_stamp:
-                    out[name] = f"XR {name} 时间戳回退"
+                    out[name] = f"XR {name} timestamp went backwards"
                 elif stamps[name] > last_stamp:
                     # capped so a pose resuming after a data gap is still checked for a jump
                     dt = min(stamps[name] - last_stamp, 0.1) if name in ("left", "right") else 0.0
                     if np.linalg.norm(pose[:3, 3] - last_pose[:3, 3]) > self.jump_pos + self.jump_speed * dt:
-                        out[name] = f"XR {name} 位置跳变"
+                        out[name] = f"XR {name} position jump"
                     elif rotation_angle(last_pose[:3, :3].T @ pose[:3, :3]) > self.jump_ang + self.jump_rate * dt:
-                        out[name] = f"XR {name} 姿态跳变"
+                        out[name] = f"XR {name} orientation jump"
             self._last[name] = (pose, stamps[name])
         head = poses.get("headset")
         if head is not None:
             for name in ("left", "right"):
                 if (name in poses and name not in out
                         and np.linalg.norm(poses[name][:3, 3] - head[:3, 3]) > self.max_reach):
-                    out[name] = f"{name} 手柄离头盔过远"
+                    out[name] = f"{name} controller too far from headset"
         return out
 
     def check(self, poses: dict, stamps: dict) -> str | None:

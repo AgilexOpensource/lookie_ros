@@ -47,9 +47,9 @@ class CatchUp:
              ctrl_speed: tuple[float, float]):
         """Returns (pos, quat, status) with status ``"catching"``, ``"converged"`` or a failure reason."""
         if ctrl_speed[0] > self.fast_v or ctrl_speed[1] > self.fast_w:
-            return pos, quat, "手柄动作过快"
+            return pos, quat, "controller moving too fast"
         if now - self.started > self.timeout_s:
-            return pos, quat, "追赶超时"
+            return pos, quat, "catch-up timed out"
         pos, quat = step_toward(pos, quat, goal_pos, goal_quat, self.v, self.w, dt)
         converged = (np.linalg.norm(np.asarray(goal_pos) - pos) < self.pos_tol
                      and quat_angle(quat, goal_quat) < self.ori_tol)

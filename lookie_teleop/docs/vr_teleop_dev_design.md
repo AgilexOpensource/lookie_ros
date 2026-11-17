@@ -126,6 +126,8 @@ Internally this is represented as an "enabled axis set": trio = `{chassis, waist
 
 ## 4. State machine
 
+`~/status` reports these names: `state` is `NotReady`, `Homing`, `Homed`, `Enabled` or `Disabled`; `arms.<side>` is `Held`, `CatchUp` or `Active`. Hint texts such as `reason` and `warnings` are in English.
+
 ### 4.1 Main states
 
 ```mermaid

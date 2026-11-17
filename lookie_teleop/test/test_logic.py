@@ -112,7 +112,7 @@ def test_calibration_spacing_mismatch_only_warns_and_keeps_hand_spacing():
     # midpoint, so the arms take the operator's spacing (the catch-up closes the gap).
     headset, ctrl, ee = calib_inputs(spacing=0.7)
     reason, ref = calibration.check(headset, ctrl, ee, np.eye(3), CAL)
-    assert reason is None and any("间距" in w for w in ref.warnings)
+    assert reason is None and any("spacing" in w for w in ref.warnings)
     fh = ref.mount.heading(headset)
     amap = ArmMap(ref.M0, ref.m0, np.eye(3), ref.C)
     left, _ = amap.target("left", fh, ctrl["left"])
@@ -124,14 +124,14 @@ def test_calibration_spacing_mismatch_only_warns_and_keeps_hand_spacing():
 def test_calibration_rejects_tilted_mount():
     reason, _ = calibration.check(*calib_inputs(headset=pose((0, 0, 1.4), (0.0, 0.9, 0.0))),
                                   np.eye(3), CAL)
-    assert "倾斜" in reason
+    assert "tilted" in reason
 
 
 def test_calibration_rejects_crossed_controllers():
     headset, ctrl, ee = calib_inputs()
     ctrl = {"left": ctrl["right"], "right": ctrl["left"]}
     reason, _ = calibration.check(headset, ctrl, ee, np.eye(3), CAL)
-    assert "交叉" in reason
+    assert "crossed" in reason
 
 
 def test_mount_removes_chest_tilt_but_keeps_yaw():
@@ -473,8 +473,8 @@ def test_catchup_converges_and_times_out():
         pos, _, status = cu.step(pos, Q0, goal, Q0, 0.02, t, (0.0, 0.0))
     assert status == "converged"
     cu.start(0.0)
-    assert cu.step(np.zeros(3), Q0, np.array([5.0, 0, 0]), Q0, 0.02, 2.5, (0, 0))[2] == "追赶超时"
-    assert cu.step(np.zeros(3), Q0, goal, Q0, 0.02, 0.1, (1.0, 0))[2] == "手柄动作过快"
+    assert cu.step(np.zeros(3), Q0, np.array([5.0, 0, 0]), Q0, 0.02, 2.5, (0, 0))[2] == "catch-up timed out"
+    assert cu.step(np.zeros(3), Q0, goal, Q0, 0.02, 0.1, (1.0, 0))[2] == "controller moving too fast"
 
 
 def test_workspace_clamps_after_engage_until_the_target_is_first_inside():
@@ -539,7 +539,7 @@ def test_failed_catch_up_stops_only_that_arm_until_a_new_double_tap():
     fake.ctrl_speed["left"] = (1.0, 0.0)                    # the hand moves fast during the catch-up
     assert node.TeleopNode._arms(fake, 0.02, 0.01, np.eye(4))
     held = fake.arms["left"]
-    assert held.mode == node.STOPPED and fake.catch_aborts == {"left": "手柄动作过快"}
+    assert held.mode == node.STOPPED and fake.catch_aborts == {"left": "controller moving too fast"}
     np.testing.assert_allclose(published[-1], before)       # held where it was, no jump
     assert fake.arms["right"] is other                      # the other arm is untouched
     assert not tap.engaged and tap.update(True, 0.3) is None  # the grip still held does not re-engage
@@ -557,8 +557,8 @@ def state(**mods):
 
 def test_kstone_health():
     assert safety.kstone_health(state(torso_pose=None), 0.0, 0.3, True, ["torso_pose"]) is None
-    assert "超时" in safety.kstone_health(state(), 1.0, 0.3, True, [])
-    assert "抢占" in safety.kstone_health(state(torso_pose="torso_joint"), 0.0, 0.3, True, ["torso_pose"])
+    assert "timed out" in safety.kstone_health(state(), 1.0, 0.3, True, [])
+    assert "held by" in safety.kstone_health(state(torso_pose="torso_joint"), 0.0, 0.3, True, ["torso_pose"])
     stale = state(torso_pose=None)
     stale["fresh"] = False
     assert safety.kstone_health(stale, 0.0, 0.3, False, ["torso_pose"]) is None
@@ -582,9 +582,9 @@ def test_xr_monitor_timeout_jump_and_reach():
     assert mon.stale({"headset": 0.25}, 0.3) is None
     h = pose((0, 0, 1.4))
     assert mon.check({"headset": h, "left": pose((0.3, 0.2, 1.2))}, {"headset": 1.0, "left": 1.0}) is None
-    assert "跳变" in mon.check({"left": pose((0.6, 0.2, 1.2))}, {"left": 1.02})
+    assert "jump" in mon.check({"left": pose((0.6, 0.2, 1.2))}, {"left": 1.02})
     mon.reset()
-    assert "过远" in mon.check({"headset": h, "left": pose((2.0, 0, 1.4))}, {"headset": 2.0, "left": 2.0})
+    assert "too far" in mon.check({"headset": h, "left": pose((2.0, 0, 1.4))}, {"headset": 2.0, "left": 2.0})
 
 
 def test_xr_monitor_per_name_issues_and_recenter():
@@ -600,8 +600,8 @@ def test_xr_monitor_per_name_issues_and_recenter():
     shift = pose((0.5, 0.3, 0.0), (0.0, 0.0, 1.0))
     issues = mon.issues({k: shift @ v for k, v in (("headset", h), ("left", l), ("right", r))},
                         {k: 1.04 for k in st})
-    assert "headset" in issues and "跳变" in mon_check_first(issues)
-    assert mon.stale_issues({"headset": 0.9, "left": None, "right": 1.0}, 1.0) == {"left": "XR left 数据超时"}
+    assert "headset" in issues and "jump" in mon_check_first(issues)
+    assert mon.stale_issues({"headset": 0.9, "left": None, "right": 1.0}, 1.0) == {"left": "XR left data timed out"}
     mon.forget("left")
     assert "left" not in mon.issues({"left": pose((5.0, 0, 0))}, {"left": 2.0})
 
@@ -616,13 +616,13 @@ def test_xr_monitor_allows_fast_controller_motion_but_not_a_fast_headset():
     flick = pose((0.45, 0.2, 1.2), (math.radians(45), 0.0, 0.0))
     assert mon.issues({"left": flick}, {"left": 1.06}) == {}
     # a tracking snap of 30 cm within 20 ms is still a jump
-    assert "位置跳变" in mon.issues({"left": pose((0.75, 0.2, 1.2))}, {"left": 1.08})["left"]
+    assert "position jump" in mon.issues({"left": pose((0.75, 0.2, 1.2))}, {"left": 1.08})["left"]
     # the headset gets no allowance (a recenter is still caught)
-    assert "位置跳变" in mon.issues({"headset": pose((0.15, 0, 1.4))}, {"headset": 1.03})["headset"]
+    assert "position jump" in mon.issues({"headset": pose((0.15, 0, 1.4))}, {"headset": 1.03})["headset"]
     # after a 0.4 s gap the allowance is capped at 0.1 s: 0.10 + 6 * 0.1 = 0.7 m
     mon.reset()
     assert mon.issues({"left": l}, {"left": 2.0}) == {}
-    assert "位置跳变" in mon.issues({"left": pose((1.1, 0.2, 1.2))}, {"left": 2.4})["left"]
+    assert "position jump" in mon.issues({"left": pose((1.1, 0.2, 1.2))}, {"left": 2.4})["left"]
 
 
 def test_headset_timeout_stops_both_arms_instead_of_disabling():
@@ -632,7 +632,7 @@ def test_headset_timeout_stops_both_arms_instead_of_disabling():
     h, l, r = pose((0, 0, 1.4)), pose((0.3, 0.2, 1.2)), pose((0.3, -0.2, 1.2))
     fake = SimpleNamespace(xr_monitor=mon, xr={"headset": (h, 1.0, 1.0), "left": (l, 1.6, 1.6), "right": (r, 1.6, 1.6)})
     issues = node.TeleopNode._xr_issues(fake, object(), object(), 1.6)
-    assert issues == {"left": "XR headset 数据超时", "right": "XR headset 数据超时"}
+    assert issues == {"left": "XR headset data timed out", "right": "XR headset data timed out"}
     fake.xr["headset"] = (h, 1.6, 1.6)
     assert node.TeleopNode._xr_issues(fake, object(), object(), 1.62) == {}   # recovered: no spurious jump
     fake.xr["headset"] = (pose((0.5, 0.3, 1.4)), 1.62, 1.62)                 # a recenter still disables
@@ -697,7 +697,7 @@ def test_home_tracker_success_and_failures():
 
     ht = HomeTracker(["torso_pose"], 0.0, 20.0, 1.0)
     ht.accepted("torso_pose", 7, 0.0)
-    assert ht.update({"outcomes": [], "modules": {}}, 1.5) == "failed" and "查询不到" in ht.failure
+    assert ht.update({"outcomes": [], "modules": {}}, 1.5) == "failed" and "not found" in ht.failure
 
     ht = HomeTracker(["torso_pose"], 0.0, 20.0, 1.0)
     ht.accepted("torso_pose", 7, 0.0)

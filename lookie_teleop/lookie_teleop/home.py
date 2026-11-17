@@ -28,7 +28,7 @@ class HomeTracker:
 
     def accepted(self, module: str, request_id: int | None, now: float) -> None:
         if request_id is None:
-            self.fail(f"{module} Home 回复无 request_id")
+            self.fail(f"{module} Home reply has no request_id")
         else:
             self.request[module] = (request_id, now)
 
@@ -51,7 +51,7 @@ class HomeTracker:
                     if outcome is None:
                         continue
                     if not outcome.get("applied", False):
-                        self.fail(f"{module} Home 未受理: {outcome.get('error', '')}")
+                        self.fail(f"{module} Home not applied: {outcome.get('error', '')}")
                         return "failed"
                     self.outcome_seen.add(module)
                 m = mods.get(module, {})
@@ -63,10 +63,10 @@ class HomeTracker:
                     self.done.add(module)
         for module, (_, sent) in self.request.items():
             if module not in self.outcome_seen and now - sent > self.outcome_timeout_s:
-                self.fail(f"{module} Home 结果查询不到")
+                self.fail(f"{module} Home outcome not found")
                 return "failed"
         if now - self.started > self.timeout_s:
-            self.fail("Home 超时")
+            self.fail("Home timed out")
             return "failed"
         if len(self.done) == len(self.modules):
             return "succeeded"

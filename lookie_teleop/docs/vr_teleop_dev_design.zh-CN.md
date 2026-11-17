@@ -126,6 +126,8 @@ flowchart LR
 
 ## 4. 状态机
 
+`~/status` 中的状态值使用英文名：`state` 为 `NotReady`（未就绪）、`Homing`（回Home）、`Homed`（已归位）、`Enabled`（已使能）、`Disabled`（失能）；`arms.<side>` 为 `Held`（停住）、`CatchUp`（追赶）、`Active`（激活）。`reason`、`warnings` 等提示文本均为英文。
+
 ### 4.1 主状态
 
 ```mermaid

@@ -274,7 +274,7 @@ class Chassis:
                 or (abs(eyaw) > cfg.diverge_ang and self._vel[2] * math.copysign(1.0, eyaw) < -cfg.diverge_w))
         self._diverging = self._diverging + dt if away else 0.0
         if self._diverging > cfg.diverge_s and self.fault is None:
-            self.fault = f"底盘背离目标运动（误差 {n:.2f} m / {math.degrees(eyaw):.0f}°）"
+            self.fault = f"chassis moving away from target (error {n:.2f} m / {math.degrees(eyaw):.0f}°)"
 
 
 class Settle:

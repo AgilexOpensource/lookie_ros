@@ -1,7 +1,7 @@
 """ROS 2 node: xr_media_ros -> kstone_ros whole-body teleop (docs/vr_teleop_dev_design.md).
 
-Holds the teleop state machine (未就绪 / 回Home / 已归位 / 已使能 / 失能) and the per-arm
-substates (停住 / 追赶 / 激活); all geometry lives in the pure modules.
+Holds the teleop state machine (NotReady / Homing / Homed / Enabled / Disabled) and the per-arm
+substates (Held / CatchUp / Active); all geometry lives in the pure modules.
 """
 
 import json
@@ -33,8 +33,8 @@ from .safety import XrMonitor, kstone_health
 from .transforms import matrix_to_quat, quat_to_matrix, yaw_of
 from .workspace import SIDES, Workspace, project
 
-NOT_READY, HOMING, HOMED, ENABLED, DISABLED = "未就绪", "回Home", "已归位", "已使能", "失能"
-STOPPED, CATCHING, ACTIVE = "停住", "追赶", "激活"
+NOT_READY, HOMING, HOMED, ENABLED, DISABLED = "NotReady", "Homing", "Homed", "Enabled", "Disabled"
+STOPPED, CATCHING, ACTIVE = "Held", "CatchUp", "Active"
 CHASSIS_MODE_WAIST_AXES = frozenset({"waist_z", "waist_pitch"})
 ARM_MODULES = {"left": "left_arm_pose", "right": "right_arm_pose"}
 XR_NAMES = {"headset": "headset", "left": "left_controller", "right": "right_controller"}
@@ -149,7 +149,7 @@ class TeleopNode(Node):
 
         self.profile = None
         self.state = NOT_READY
-        self.reason = "等待运控 discover"
+        self.reason = "waiting for kstone discover"
         self.warnings = []
         self.clamped = set()
         self.body_mode = p["default_body_mode"]
@@ -198,7 +198,7 @@ class TeleopNode(Node):
         self.chassis_pose_pub = None
         self.joint_pub = None
         self.create_timer(1.0 / p["rate_hz"], self._tick)
-        self.get_logger().info("lookie_teleop 已启动，等待 kstone discover")
+        self.get_logger().info("lookie_teleop started, waiting for kstone discover")
 
     # ------------------------------------------------------------------ helpers
     def _now(self) -> float:
@@ -231,7 +231,7 @@ class TeleopNode(Node):
         try:
             self.kstate = json.loads(msg.data)
         except json.JSONDecodeError:
-            self.get_logger().warn("无法解析 kstone state")
+            self.get_logger().warn("cannot parse kstone state")
             return
         self.kstate_t = self._now()
         if self.state == HOMING:
@@ -243,7 +243,7 @@ class TeleopNode(Node):
         try:
             profile = parse_discover(json.loads(msg.data), self.p["body_axes"])
         except (ValueError, KeyError, json.JSONDecodeError) as e:
-            self.reason = f"discover 解析失败: {e}"
+            self.reason = f"failed to parse discover: {e}"
             self.get_logger().error(self.reason)
             return
         self._setup(profile)
@@ -264,8 +264,8 @@ class TeleopNode(Node):
         self._setup_end_effectors(profile)
         if not profile.has("chassis"):
             self.body_mode = "waist"
-        self.reason = "长按 B 回 Home"
-        self.get_logger().info(f"底盘 {profile.kinematics or '无'}，头盔可控轴 {sorted(profile.axes)}")
+        self.reason = "long press B to home"
+        self.get_logger().info(f"chassis {profile.kinematics or 'none'}, headset-driven axes {sorted(profile.axes)}")
 
     def _setup_end_effectors(self, profile):
         topic = None
@@ -273,7 +273,7 @@ class TeleopNode(Node):
             port = profile.vector_ports.get(mid)
             names = self._typed(f"ee_joints_{side}") or (port.labels if port else None)
             if not names:
-                self.get_logger().warn(f"{mid} 无关节名，{side} 末端不受控")
+                self.get_logger().warn(f"{mid} has no joint names; {side} end effector not controlled")
                 continue
             n = len(names)
             lower = np.asarray(self._typed("ee_lower") or (port.lower if port else [-np.inf] * n), float)
@@ -282,7 +282,8 @@ class TeleopNode(Node):
             q_close = np.asarray(self._typed("ee_close") or upper, float)
             if not (len(lower) == len(upper) == len(q_open) == len(q_close) == n) \
                     or not np.all(np.isfinite(q_close)):
-                self.get_logger().error(f"{side} 末端关节配置长度不一致或缺少 ee_close，{side} 末端不受控")
+                self.get_logger().error(f"{side} end-effector joint settings differ in length or lack ee_close; "
+                                        f"{side} end effector not controlled")
                 continue
             self.ee[side] = dict(module=mid, names=list(names), open=q_open, close=q_close,
                                    lower=lower, upper=upper)
@@ -364,7 +365,7 @@ class TeleopNode(Node):
             self._start_home(now)
             return
         if b == "short" and self.state in (HOMED, ENABLED):
-            self._disable("用户停止（短按 B）")
+            self._disable("stopped by user (short press B)")
             return
         if self.state not in (HOMED, ENABLED):
             return
@@ -405,13 +406,13 @@ class TeleopNode(Node):
     def _start_home(self, now):
         self._halt()
         self.state = HOMING
-        self.reason = "回 Home 中"
+        self.reason = "homing"
         self.home = HomeTracker(self.p["home_modules"], now, self.p["home_timeout_s"],
                                 self.p["outcome_timeout_s"])
         for mid in self.p["home_modules"]:
             client = self.home_clients.get(mid)
             if client is None or not client.service_is_ready():
-                self.home.fail(f"{mid} Home 服务不可用")
+                self.home.fail(f"{mid} Home service unavailable")
                 break
             client.call_async(Trigger.Request()).add_done_callback(partial(self._on_home_reply, self.home, mid))
         self._update_home(now)
@@ -422,12 +423,12 @@ class TeleopNode(Node):
         try:
             res = future.result()
         except Exception as e:  # noqa: BLE001 - any transport error fails the Home
-            tracker.fail(f"{mid} Home 调用失败: {e}")
+            tracker.fail(f"{mid} Home call failed: {e}")
         else:
             if res.success:
                 tracker.accepted(mid, parse_request_id(res.message), self._now())
             else:
-                tracker.fail(f"{mid} Home 被拒绝: {res.message}")
+                tracker.fail(f"{mid} Home rejected: {res.message}")
         if self.state == HOMING:
             self._update_home(self._now())
 
@@ -435,21 +436,21 @@ class TeleopNode(Node):
         result = self.home.update(self.kstate, now)
         if result == "succeeded":
             self.state = HOMED
-            self.reason = "已归位，摆好手柄后长按 A 使能"
+            self.reason = "homed; place the controllers, then long press A to enable"
             self.waist = None
             self.home = None
-            self.get_logger().info("回 Home 成功")
+            self.get_logger().info("Home succeeded")
         elif result == "failed":
             reason = self.home.failure
             self.home = None
-            self._disable(f"回 Home 失败: {reason}")
+            self._disable(f"Home failed: {reason}")
 
     # ------------------------------------------------------------------ enable / disable
     def _calibrate(self, now):
         reason = self._xr_stale(now) or self._kstone_reason(now)
         missing = [m for m in ("torso_pose", *ARM_MODULES.values()) if m not in self.fb]
         if reason is None and missing:
-            reason = f"缺少反馈 {missing}"
+            reason = f"missing feedback {missing}"
         if reason is None:
             torso = self.fb["torso_pose"]
             ft0 = heading_frame(torso[:3, 3], yaw_of(torso[:3, :3]))
@@ -458,7 +459,7 @@ class TeleopNode(Node):
             ctrls = {s: self._controller(s) for s in SIDES}
             reason, ref = calibration.check(self.xr["headset"][0], ctrls, ee, self.R, self.calib_cfg)
         if reason is not None:
-            self.reason = f"使能被拒绝: {reason}"
+            self.reason = f"enable rejected: {reason}"
             self.get_logger().warn(self.reason)
             return
         self.mount = ref.mount
@@ -485,7 +486,7 @@ class TeleopNode(Node):
         self.stick_settle = Settle()
         self.state = ENABLED
         self.reason = ""
-        self.get_logger().info("已使能" + (f"（提示: {'；'.join(self.warnings)}）" if self.warnings else ""))
+        self.get_logger().info("enabled" + (f" (note: {'; '.join(self.warnings)})" if self.warnings else ""))
 
     def _record_chassis(self, fh):
         fb = self.fb.get("chassis")
@@ -515,7 +516,7 @@ class TeleopNode(Node):
         self._halt()
         self.state = DISABLED
         self.reason = reason
-        self.get_logger().warn(f"失能: {reason}")
+        self.get_logger().warn(f"disabled: {reason}")
 
     # ------------------------------------------------------------------ enabled
     def _xr_issues(self, left, right, now):
@@ -523,7 +524,7 @@ class TeleopNode(Node):
         stale = self.xr_monitor.stale_issues({k: (v[2] if v else None) for k, v in self.xr.items()}, now)
         for s, joy in (("left", left), ("right", right)):
             if joy is None:
-                stale.setdefault(s, f"XR {s} 按键数据超时")
+                stale.setdefault(s, f"XR {s} button data timed out")
         for name in stale:
             self.xr_monitor.forget(name)  # no spurious jump against the pre-loss pose on recovery
         fresh = [k for k in self.xr if k not in stale and self.xr[k] is not None]
@@ -542,7 +543,7 @@ class TeleopNode(Node):
         reason = issues.get("headset") or self._kstone_reason(now)
         missing = [m for m in ("torso_pose", *ARM_MODULES.values()) if m not in self.fb]
         if reason is None and missing:
-            reason = f"缺少反馈 {missing}"
+            reason = f"missing feedback {missing}"
         if reason is not None:
             self._disable(reason)
             return
@@ -550,7 +551,7 @@ class TeleopNode(Node):
             if s in issues:
                 self._stop_arm(s, issues[s])
             elif s in self.arm_faults:
-                self.get_logger().info(f"{s} XR 恢复，双击侧扳机重新接管")
+                self.get_logger().info(f"{s} XR recovered; double-press the grip trigger to take over again")
                 del self.arm_faults[s]
 
         headset = self.xr["headset"][0]
@@ -611,7 +612,7 @@ class TeleopNode(Node):
     def _stop_arm(self, side, reason):
         """Controller loss stops only that arm: hold its pose, require a fresh double-tap later."""
         if side not in self.arm_faults:
-            self.get_logger().warn(f"{side}臂停住: {reason}")
+            self.get_logger().warn(f"{side} arm held: {reason}")
         self.arm_faults[side] = reason
         held = self.arms[side]
         self.arms[side] = Arm(held.pos, held.quat)
@@ -621,7 +622,8 @@ class TeleopNode(Node):
 
     def _abort_catch(self, side, reason):
         """A failed catch-up stops only that arm where it is; a fresh double-tap and hold catches up again."""
-        self.get_logger().warn(f"{side}臂追赶中止: {reason}，双击并按住侧扳机重新追赶")
+        self.get_logger().warn(f"{side} arm catch-up aborted: {reason}; "
+                               "double-press and hold the grip trigger to retry")
         self.catch_aborts[side] = reason
         held = self.arms[side]
         self.arms[side] = Arm(held.pos, held.quat)
