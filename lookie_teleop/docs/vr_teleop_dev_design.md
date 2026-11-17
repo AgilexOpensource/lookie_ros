@@ -5,6 +5,17 @@
 > For developers: describes the interfaces, state machine, coordinate mapping, calibration checks, boundary constraints and safety policy of `lookie_teleop`.
 > For operating steps, headset settings and troubleshooting see the [VR teleoperation quick start](vr_teleop_quickstart.md). All thresholds in this document are parameter defaults (`PARAMS` in `lookie_teleop/node.py`); the full list is in [§13](#13-parameters).
 
+## Summary
+
+- **What it does**: turns `xr_media_ros` headset and controller poses and buttons into `kstone_ros` pose targets for the arms, waist and chassis, and joint targets for the end effectors. It does no IK, no homing interpolation and no head control.
+- **State machine** (§4): `NotReady →(long B) Homing → Homed →(long A, calibration) Enabled`. Inside Enabled each arm moves independently through `Held → CatchUp → Active`: a double-tap and hold on the side trigger takes over, releasing it stops the arm.
+- **Safety principles** (§12):
+  - Disabling only stops publishing: no power cut and no enable service call, so kstone holds the last target.
+  - A headset jump, a kstone fault or a kstone timeout disables everything; a lost controller or a single module dropping out stops only that part.
+  - A jump frame is never sent.
+- **Read before changing code**: §2 interfaces, §4 state machine, §12 disable conditions; parameter defaults are in §13 and the code layout in §15.
+- **Verify**: the pure-logic modules do not need rclpy, so run `python3 -m pytest lookie_teleop/test`; changes to the state machine or safety also need the on-robot checks in §16.
+
 ## 1. Scope and principles
 
 | Item | Convention |
