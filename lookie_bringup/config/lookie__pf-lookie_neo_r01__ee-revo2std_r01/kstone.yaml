@@ -95,11 +95,14 @@ modules:
     position_tolerance: 0.001
     orientation_tolerance: 0.01
     task: {level: 0}
-    home_motion: {velocity_scale: 0.1667, timeout_s: 2.0}
+    # Home at about the lift's own speed (0.01 m/s) and the previous 0.5 rad/s pitch.
+    home_motion: {velocity_scale: 0.6667, timeout_s: 2.0}
     trajectory:
       lead_speed_scale: 3.0
-      position: {velocity: 1.0, acceleration: 2.5, deceleration: 2.5, reversal_deceleration: 5.0, jerk: 25.0}
-      orientation: {velocity: 3.0, acceleration: 5.0, deceleration: 5.0, reversal_deceleration: 10.0, jerk: 50.0}
+      # Matched to the lift (torso_joint1 ~0.01 m/s): a faster height ramp is chased by waist pitch instead.
+      position: {velocity: 0.015, acceleration: 0.015, deceleration: 0.015, reversal_deceleration: 0.015, jerk: 0.15}
+      # Teleop already rate-limits pitch to 0.8 rad/s.
+      orientation: {velocity: 0.8, acceleration: 1.25, deceleration: 1.25, reversal_deceleration: 2.5, jerk: 12.5}
   left_arm_pose:
     type: frame_target
     frame: left_base_link  # no tool frame in this URDF
