@@ -3,8 +3,9 @@
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.logging import get_logger
 
-from lookie_bringup.config import load_bridge_topics, load_kstone_config
+from lookie_bringup.config import feedback_timeout_warnings, load_bridge_topics, load_kstone_config
 from lookie_bringup.launch_utils import arg, common_arguments, include, resolve_common
 from lookie_driver.layout import CHASSIS_NAMESPACE, DRIVER_NAMESPACE
 
@@ -12,10 +13,13 @@ from lookie_driver.layout import CHASSIS_NAMESPACE, DRIVER_NAMESPACE
 def _setup(context, *args, **kwargs):
     config_path, cfg, ns = resolve_common(context)
     topics = load_bridge_topics(cfg.bridge_config)
+    kstone_config = load_kstone_config(config_path, get_package_share_directory)
+    for warning in feedback_timeout_warnings(cfg.bridge_config, kstone_config):
+        get_logger('lookie_bringup').warning(warning)
     driver = DRIVER_NAMESPACE
     return [include('lookie_control', 'kstone.launch.py', {
         'namespace': ns,
-        'config_file': str(load_kstone_config(config_path, get_package_share_directory)),
+        'config_file': str(kstone_config),
         'urdf': str(cfg.collision_urdf),
         'feedback_topic': f'{driver}/{topics.feedback_topic}',
         'control_topic': f'{driver}/{topics.control_topic}',

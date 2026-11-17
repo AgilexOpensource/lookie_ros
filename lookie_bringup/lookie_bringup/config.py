@@ -136,3 +136,31 @@ def load_bridge_topics(bridge_config) -> BridgeTopics:
         feedback_topic=str(data.get('feedback_topic', 'feedback/joint_states')).strip('/'),
         control_topic=str(data.get('control_topic', 'control/joint_states')).strip('/'),
     )
+
+
+BRIDGE_FEEDBACK_TIMEOUT_DEFAULT = 0.15  # joint_bridge_node default when the YAML omits it
+
+
+def feedback_timeout_warnings(bridge_config, kstone_config) -> list:
+    """Cross-file timing rule: keep the bridge timeout at or below kstone's.
+
+    The bridge restamps cached feedback, so kstone only sees the republish time. After a driver
+    goes silent, kstone detaches its group only after bridge + kstone timeouts, solving on frozen
+    joint positions until then; a larger bridge timeout makes that window longer.
+    Returns warnings; never raises.
+    """
+    try:
+        bridge = float(_load_mapping(bridge_config).get('feedback_timeout_s',
+                                                        BRIDGE_FEEDBACK_TIMEOUT_DEFAULT))
+        kstone = _load_mapping(kstone_config).get('feedback_timeout_s')
+        if kstone is None:
+            return []
+        kstone = float(kstone)
+    except Exception as exc:  # noqa: BLE001 - a check must not stop the launch
+        return [f'could not compare feedback timeouts: {exc}']
+    if 0.0 < bridge <= kstone:
+        return []
+    return [f'joint bridge feedback_timeout_s ({bridge}) must be > 0 and at most kstone '
+            f'feedback_timeout_s ({kstone}); a silent driver is detected only after {bridge + kstone:.2f} s, '
+            f'with kstone solving on its frozen joint positions until then '
+            f'({bridge_config}, {kstone_config})']
