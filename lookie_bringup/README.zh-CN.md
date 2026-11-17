@@ -25,8 +25,7 @@ echo 'export LOOKIE_MODEL=lookie__pf-lookie_trio_r01__ee-revo2std_r01' >> ~/.bas
 
 先启用 [lookie_driver](../lookie_driver/README.zh-CN.md#can-接口) 中列出的 CAN 接口，再按上表顺序各开一个终端启动。
 
-> [!WARNING]
-> 默认的 `driver_ros.yaml`（`auto_enable: true`、`control_enabled: true`）下，`lookie.launch.py` 启动驱动时就会使能全部电机。`kstone.launch.py` 收到新鲜反馈后即开始控制机器人：先从实测位姿开始，随后双臂会在零空间调整几秒后停稳。启动前请清空机器人周围。
+> **警告：** 默认的 `driver_ros.yaml`（`auto_enable: true`、`control_enabled: true`）下，`lookie.launch.py` 启动驱动时就会使能全部电机。`kstone.launch.py` 收到新鲜反馈后即开始控制机器人：先从实测位姿开始，随后双臂会在零空间调整几秒后停稳。启动前请清空机器人周围。
 
 ### lookie.launch.py
 
