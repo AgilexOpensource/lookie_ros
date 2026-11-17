@@ -1,4 +1,5 @@
 import xml.etree.ElementTree as ET
+from fnmatch import fnmatch
 from pathlib import Path
 
 import pytest
@@ -51,6 +52,25 @@ def test_bridge_drops_silent_modules_before_kstone_feedback_timeout(path):
     bridge = yaml.safe_load((path.parent / 'driver_joint_bridge.yaml').read_text())
     kstone = yaml.safe_load((path.parent / 'kstone.yaml').read_text())
     assert 0 < bridge['feedback_timeout_s'] <= kstone['feedback_timeout_s']
+
+
+@pytest.mark.parametrize('path', CONFIGS, ids=_model)
+def test_bridge_covers_every_independent_urdf_joint(path):
+    """The driver bridge forwards exactly the joints kstone commands: no mimic follower, no locked wheel."""
+    bridge = yaml.safe_load((path.parent / 'driver_joint_bridge.yaml').read_text())
+    bridged = []
+    for module in bridge['modules']:
+        bridged += list(module['joint_map'].values()) if 'joint_map' in module else module['joints']
+    kstone = yaml.safe_load((path.parent / 'kstone.yaml').read_text())
+    locked = set(kstone['model'].get('locked_joints', []))
+    urdf = load_bringup_config(path, _lookup).collision_urdf
+    independent = {j.get('name') for j in ET.parse(urdf).getroot().findall('joint')
+                   if j.get('type') != 'fixed' and j.find('mimic') is None} - locked
+    assert len(bridged) == len(set(bridged))
+    assert set(bridged) == independent
+    # every commanded joint sits in a named feedback group, so no catch-all "default" group remains
+    patterns = [p for g in kstone['feedback_groups'] for p in g['joints']]
+    assert [j for j in sorted(independent) if not any(fnmatch(j, p) for p in patterns)] == []
 
 
 @pytest.mark.parametrize('value', [

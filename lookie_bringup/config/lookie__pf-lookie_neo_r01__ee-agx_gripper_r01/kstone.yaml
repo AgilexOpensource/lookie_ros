@@ -5,6 +5,7 @@ model:
   package_dirs: ["${package_dirs}"]
   root: free_flyer
   mimic: coupled
+  locked_joints: [left_wheel_joint, right_wheel_joint]  # chassis moves through the root, not the wheels
   joint_limits:
     position:
       lower:
@@ -23,8 +24,14 @@ model:
         r_arm_joint3: 2.090
 rate_hz: 50
 feedback_timeout_s: 0.25
-# Each gripper attaches on its own: an unplugged gripper stops only itself, the rest keeps running.
+# One group per hardware module: each attaches on its own, so a lost module stops only itself
+# (kstone_ros forwards only attached groups; lookie_teleop holds only the affected part).
+# Ungrouped joints would form the group "default"; the free root is the group "base".
 feedback_groups:
+  - {name: torso, joints: ["torso_joint*"]}
+  - {name: head, joints: ["head_joint*"]}
+  - {name: left_arm, joints: ["l_arm_joint*"]}
+  - {name: right_arm, joints: ["r_arm_joint*"]}
   - {name: left_gripper, joints: [l_gripper]}
   - {name: right_gripper, joints: [r_gripper]}
 realtime: true
