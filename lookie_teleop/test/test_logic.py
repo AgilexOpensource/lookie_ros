@@ -812,3 +812,29 @@ def test_non_finite_or_degenerate_input_is_rejected():
     assert _transform_to_matrix(msg) is None
     assert _valid_joy(Joy(axes=[0.0, 0.5]))
     assert not _valid_joy(Joy(axes=[0.0, float("inf")]))
+
+
+def test_short_b_cancels_home_through_home_cancel():
+    from types import SimpleNamespace
+    node = pytest.importorskip("lookie_teleop.node")
+    calls, reasons = [], []
+
+    class Future:
+        def __init__(self, ok): self.ok = ok
+        def result(self): return SimpleNamespace(success=self.ok, message="queue full")
+        def add_done_callback(self, cb): cb(self)
+
+    log = SimpleNamespace(error=lambda m: reasons.append(m))
+    fake = SimpleNamespace(p={"home_modules": ["torso_pitch_joint", "left_arm_pose"], "haptic_long_press": [0.0, 0.0]},
+                           cancel_client=SimpleNamespace(service_is_ready=lambda: True,
+                                                         call_async=lambda req: calls.append(req) or Future(False)),
+                           home=object(), state=node.HOMING, get_logger=lambda: log,
+                           _disable=lambda r: reasons.append(r), lp_b=ShortLongPress(1.0), lp_a=LongPress(1.0),
+                           lp_y=LongPress(1.0), lp_x=LongPress(1.0), _button=lambda msg, i: msg == i)
+    fake._on_home_cancel = lambda fut: node.TeleopNode._on_home_cancel(fake, fut)
+    fake._abort_home = lambda: node.TeleopNode._abort_home(fake)
+    node.TeleopNode._buttons(fake, None, node.BTN_YB, 0.0)
+    node.TeleopNode._buttons(fake, None, None, 0.3)          # short press B released
+    assert len(calls) == 1                                   # one global cancel
+    assert fake.home is None
+    assert reasons == ["Home cancel failed: queue full", "Home interrupted by user (short press B)"]

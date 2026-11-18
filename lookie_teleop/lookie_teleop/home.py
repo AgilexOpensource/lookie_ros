@@ -56,7 +56,7 @@ class HomeTracker:
                     self.outcome_seen.add(module)
                 m = mods.get(module, {})
                 home_state = m.get("home_state")
-                if home_state in ("timed_out", "aborted"):
+                if home_state in ("timed_out", "aborted", "cancelled"):
                     self.fail(f"{module} Home {home_state}")
                     return "failed"
                 if home_state == "succeeded" and not m.get("held_by"):

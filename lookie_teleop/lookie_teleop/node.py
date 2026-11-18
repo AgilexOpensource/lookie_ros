@@ -212,6 +212,7 @@ class TeleopNode(Node):
         self.status_pub = self.create_publisher(String, "~/status", 10)
         self.pose_pubs = {}
         self.home_clients = {}
+        self.cancel_client = None
         self.cmd_vel_pub = None
         self.chassis_pose_pub = None
         self.joint_pub = None
@@ -291,6 +292,7 @@ class TeleopNode(Node):
         ks = self.p["kstone_namespace"].rstrip("/")
         for mid in self.p["home_modules"]:
             self.home_clients[mid] = self.create_client(Trigger, f"{ks}/{mid}/home")
+        self.cancel_client = self.create_client(Trigger, f"{ks}/home_cancel")
         self._setup_end_effectors(profile)
         if not profile.has("chassis"):
             self.body_mode = "waist"
@@ -412,6 +414,9 @@ class TeleopNode(Node):
             self._haptic("right", long_press, now)
             self._start_home(now)
             return
+        if b == "short" and self.state == HOMING:
+            self._abort_home()
+            return
         if b == "short" and self.state in (HOMED, ENABLED):
             self._disable("stopped by user (short press B)")
             return
@@ -464,6 +469,26 @@ class TeleopNode(Node):
                 break
             client.call_async(Trigger.Request()).add_done_callback(partial(self._on_home_reply, self.home, mid))
         self._update_home(now)
+
+    def _abort_home(self):
+        """kstone ``~/home_cancel``: every running Home stops smoothly where it is and holds there (modules stay
+        enabled, home_state ``cancelled``)."""
+        self.home = None   # late Home replies are ignored
+        client = self.cancel_client
+        if client is None or not client.service_is_ready():
+            self.get_logger().error("cannot cancel Home: home_cancel service unavailable")
+        else:
+            client.call_async(Trigger.Request()).add_done_callback(self._on_home_cancel)
+        self._disable("Home interrupted by user (short press B)")
+
+    def _on_home_cancel(self, future):
+        try:
+            res = future.result()
+            ok, msg = res.success, res.message
+        except Exception as e:  # noqa: BLE001
+            ok, msg = False, str(e)
+        if not ok:
+            self.get_logger().error(f"Home cancel failed: {msg}")
 
     def _on_home_reply(self, tracker, mid, future):
         if tracker is not self.home:

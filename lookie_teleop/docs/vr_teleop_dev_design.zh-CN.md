@@ -85,7 +85,7 @@ flowchart LR
 | `fault`（非空即故障，锁存）、`fresh` | 运控健康检查（§7.2、§12） |
 | `outcomes[]` `{request_id, applied, error}` | 服务请求结果；`applied=true` 才算受理（§11） |
 | `modules.M.enabled` / `held_by` | 所需模块已使能；`held_by=null` 表示模块自身持有控制权 |
-| `modules.M.home_state` | `idle` / `waiting` / `executing` / `succeeded` / `timed_out` / `aborted`（§11） |
+| `modules.M.home_state` | `idle` / `waiting` / `executing` / `succeeded` / `timed_out` / `aborted` / `cancelled`（§11） |
 
 > `/kstone/state` 的超时按本节点接收时刻判定（`kstone_timeout_s`）。
 
@@ -112,6 +112,7 @@ flowchart LR
 | 服务 | 用途 |
 | --- | --- |
 | `/kstone/M/home`（`Trigger`） | 对 `home_modules` 中每个模块单独回 Home（只用 pose 模块；末端执行器不回 Home） |
+| `/kstone/home_cancel`（`Trigger`） | 回Home 中短按 B：一次调用取消所有正在进行的回 Home，各模块平滑停在当前位置并保持 |
 | ~~`/kstone/home`~~ | **不使用**：它对"当前持有控制权"的模块回零，持有者可能是 `*_arm_joint` / `torso_joint`，会走关节 Home |
 | ~~`/kstone/M/enable`~~ | **不使用**：遥操作失能只停发命令，不改模块使能状态，恢复时无需额外操作 |
 
@@ -154,12 +155,13 @@ stateDiagram-v2
     已归位 --> 已归位: A 被拒（给出原因）
     已使能 --> 失能: 任一失能条件 / B 短按
     已归位 --> 失能: B 短按
+    回Home --> 失能: B 短按（中断回 Home）
 ```
 
 | 状态 | 发布目标 | 接受按键 | 说明 |
 | --- | --- | --- |---|
 | 未就绪 | 仅末端执行器 | B 长按、主扳机 | 启动态；不知道机器人在哪，必须先回 Home |
-| 回Home | 仅末端执行器（先停臂/腰/底盘目标发布） | 主扳机 | 等待 kstone 回零完成；其他按键无效 |
+| 回Home | 仅末端执行器（先停臂/腰/底盘目标发布） | B 短按、主扳机 | 等待 kstone 回零完成；其他按键无效 |
 | 已归位 | 末端执行器；底盘 `cmd_vel`（摇杆，无输入发零速） | A、B、Y、X、主扳机、摇杆（仅底盘） | 臂/腰不发目标，保持 Home 姿态供 A 校准；摇杆只控底盘平移和转向，右摇杆 y（腰偏置）无效 |
 | 已使能 | 是 | 全部（A 忽略） | 含每臂子状态 |
 | 失能 | 仅末端执行器（臂/腰/底盘保持当前目标） | B 长按、主扳机 | 只停发命令（不调用 enable 服务）；底盘发一次零速后停发；摇杆/侧扳机无效，防误触 |
@@ -191,7 +193,7 @@ stateDiagram-v2
 | 输入 | 判定 | 有效状态 | 动作 |
 | --- | --- | --- |---|
 | B（右 `buttons[4]`） | 长按 ≥ `long_press_s`=1.0 s，按住期间只触发一次 | 除 回Home 外 | 回 Home；清零摇杆腰部偏置 |
-| B 短按 | 按下后 < 1 s 松开（松开沿触发；已触发长按的不再算短按） | 已归位、已使能 | 整体失能（原因"用户停止"）：停遥操作、防摇杆误触 |
+| B 短按 | 按下后 < 1 s 松开（松开沿触发；已触发长按的不再算短按） | 回Home、已归位、已使能 | 整体失能（原因"用户停止"）：停遥操作、防摇杆误触。回Home 中按下则中断回 Home：调一次 kstone `~/home_cancel`，所有回 Home 中的模块平滑停在当前插值点并保持（不失能模块） |
 | A（右 `buttons[3]`） | 长按 1 s，只在 已归位 时计时（回Home 中就按住的，Home 完成起再计 1 s，不需要松开重按） | 已归位 | 校准（§7），通过则 → 已使能 |
 | Y（左 `buttons[4]`） | 长按 1 s | 已归位、已使能（trio） | 头显驱动目标 底盘 ↔ 腰部；默认参数 `default_body_mode` |
 | X（左 `buttons[3]`） | 长按 1 s | 已归位、已使能 | 右摇杆 y 调节 腰Z ↔ 腰pitch（默认 Z）；**无急停** |
@@ -417,7 +419,7 @@ sequenceDiagram
     end
     alt 全部完成
         T->>T: 清零摇杆偏置 → 已归位
-    else 服务拒绝 / outcome 非 applied 或查不到 / timed_out / aborted / 超时 home_timeout_s
+    else 服务拒绝 / outcome 非 applied 或查不到 / timed_out / aborted / cancelled / 超时 home_timeout_s
         T->>T: → 失能（原因写入 ~/status）
     end
 ```

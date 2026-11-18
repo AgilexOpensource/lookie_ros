@@ -85,7 +85,7 @@ Fields used from `/kstone/state`:
 | `fault` (non-empty means fault, latched), `fresh` | Motion control health check (§7.2, §12) |
 | `outcomes[]` `{request_id, applied, error}` | Service request results; only `applied=true` counts as accepted (§11) |
 | `modules.M.enabled` / `held_by` | Required modules are enabled; `held_by=null` means the module itself holds control |
-| `modules.M.home_state` | `idle` / `waiting` / `executing` / `succeeded` / `timed_out` / `aborted` (§11) |
+| `modules.M.home_state` | `idle` / `waiting` / `executing` / `succeeded` / `timed_out` / `aborted` / `cancelled` (§11) |
 
 > The `/kstone/state` timeout is evaluated on this node's receive time (`kstone_timeout_s`).
 
@@ -112,6 +112,7 @@ Publishing rules:
 | Service | Purpose |
 | --- | --- |
 | `/kstone/M/home` (`Trigger`) | Return Home individually for each module in `home_modules` (pose modules only; end effectors do not return Home) |
+| `/kstone/home_cancel` (`Trigger`) | B short press during Homing: cancel every running Home in one call; each module stops smoothly where it is and holds there |
 | ~~`/kstone/home`~~ | **Not used**: it homes the modules that "currently hold control"; the holder may be `*_arm_joint` / `torso_joint`, which would run the joint Home |
 | ~~`/kstone/M/enable`~~ | **Not used**: disabling teleop only stops publishing commands and does not change the module enable state, so no extra action is needed on recovery |
 
@@ -154,12 +155,13 @@ stateDiagram-v2
     Homed --> Homed: A rejected (reason given)
     Enabled --> Disabled: Any disable condition / B short press
     Homed --> Disabled: B short press
+    Homing --> Disabled: B short press (interrupts Home)
 ```
 
 | State | Publishes targets | Accepted inputs | Description |
 | --- | --- | --- | --- |
 | NotReady | End effectors only | B long press, index trigger | Startup state; the robot's position is unknown, so it must return Home first |
-| Homing | End effectors only (arm / waist / chassis target publishing is stopped first) | Index trigger | Waits for kstone homing to complete; other inputs have no effect |
+| Homing | End effectors only (arm / waist / chassis target publishing is stopped first) | B short press, index trigger | Waits for kstone homing to complete; other inputs have no effect |
 | Homed | End effectors; chassis `cmd_vel` (joysticks, zero velocity without input) | A, B, Y, X, index trigger, joysticks (chassis only) | No arm / waist targets are sent, and the Home pose is held for A calibration; the joysticks only control chassis translation and turning, and right joystick y (waist offset) has no effect |
 | Enabled | Yes | All (A ignored) | Contains the per-arm sub-states |
 | Disabled | End effectors only (arms / waist / chassis keep their current targets) | B long press, index trigger | Only stops publishing commands (the enable service is not called); the chassis is sent zero velocity once and then publishing stops; joysticks / grip triggers have no effect, preventing accidental input |
@@ -191,7 +193,7 @@ stateDiagram-v2
 | Input | Detection | Valid states | Action |
 | --- | --- | --- | --- |
 | B (right `buttons[4]`) | Long press ≥ `long_press_s`=1.0 s, triggered only once while held | All except Homing | Return Home; clear the joystick waist offsets |
-| B short press | Released < 1 s after being pressed (triggered on the release edge; a press that already triggered a long press does not count as a short press) | Homed, Enabled | Full disable (reason: stopped by user): stops teleoperation and prevents accidental joystick input |
+| B short press | Released < 1 s after being pressed (triggered on the release edge; a press that already triggered a long press does not count as a short press) | Homing, Homed, Enabled | Full disable (reason: stopped by user): stops teleoperation and prevents accidental joystick input. During Homing it interrupts the Home: kstone `~/home_cancel` is called once, and every homing module stops smoothly on its current ramp point and holds there (the modules stay enabled) |
 | A (right `buttons[3]`) | Long press 1 s, timed only while Homed (if already held during Homing, the 1 s is counted from Home completion, without releasing and pressing again) | Homed | Calibration (§7); → Enabled if it passes |
 | Y (left `buttons[4]`) | Long press 1 s | Homed, Enabled (trio) | Headset drive target chassis ↔ waist; default from parameter `default_body_mode` |
 | X (left `buttons[3]`) | Long press 1 s | Homed, Enabled | Right joystick y adjusts waist Z ↔ waist pitch (default Z); **no emergency stop** |
@@ -417,7 +419,7 @@ sequenceDiagram
     end
     alt All complete
         T->>T: Clear joystick offsets → Homed
-    else Service rejected / outcome not applied or not found / timed_out / aborted / home_timeout_s exceeded
+    else Service rejected / outcome not applied or not found / timed_out / aborted / cancelled / home_timeout_s exceeded
         T->>T: → Disabled (reason written to ~/status)
     end
 ```
