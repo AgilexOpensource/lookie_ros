@@ -359,15 +359,16 @@ class TeleopNode(Node):
     def _health_modules(self):
         return ["torso_pose", *ARM_MODULES.values(), *[h["module"] for h in self.ee.values()]]
 
-    def _kstone_reason(self, now, scoped=False):
-        """Reason to disable. ``scoped``: arm, torso and chassis groups are left to ``_group_issues``."""
+    def _kstone_reason(self, now, scoped=False, check_held=True):
+        """Reason to disable. ``scoped``: arm, torso and chassis groups are left to ``_group_issues``.
+        ``check_held=False``: modules held by kstone (e.g. by its own Home) are not a reason."""
         age = now - self.kstate_t if self.kstate_t is not None else math.inf
         ignore = [*self.p["ee_feedback_groups"], *self.p["ignored_feedback_groups"]]
         if scoped:
             ignore += [*self.p["arm_feedback_groups"], *self.p["torso_feedback_groups"],
                        *self.p["chassis_feedback_groups"]]
         return kstone_health(self.kstate, age, self.p["kstone_timeout_s"], self.p["require_fresh"],
-                             self._health_modules(), ignore_groups=ignore)
+                             self._health_modules(), check_held=check_held, ignore_groups=ignore)
 
     def _group_issues(self):
         """Stale part-scoped kstone groups: ``left``/``right`` (that arm), ``torso`` and ``chassis`` -> reason."""
@@ -393,6 +394,8 @@ class TeleopNode(Node):
             self._buttons(left, right, now)
             if self.state == HOMING:
                 self._update_home(now)
+                if self.state == HOMING:
+                    self._run_homed(left, right, now, homing=True)
             elif self.state == ENABLED:
                 self._run_enabled(left, right, now, dt)
             elif self.state == HOMED:
@@ -703,12 +706,14 @@ class TeleopNode(Node):
         wz = -self.p["max_wz"] * apply_deadzone(self._axis(right, AX_SX), dz)
         return vx, vy, wz
 
-    def _run_homed(self, left, right, now):
-        """Homed: the sticks drive only the chassis, so the arm/waist Home pose that A relies on is kept."""
+    def _run_homed(self, left, right, now, homing=False):
+        """Homing / Homed: the sticks drive only the chassis (not homed by kstone), so the arm/waist Home
+        motion and the Home pose that A relies on are kept. While homing, kstone holds the homed modules."""
         if self.cmd_vel_pub is None:
             return
         cmd = (0.0, 0.0, 0.0)
-        if self._kstone_reason(now, scoped=True) is None and "chassis" not in self._group_issues():
+        if (self._kstone_reason(now, scoped=True, check_held=not homing) is None
+                and "chassis" not in self._group_issues()):
             lim = self.profile.chassis_velocity
             cmd = np.clip(self._stick_twist(left, right), lim.lower, lim.upper)
         self._publish_twist(cmd, now)

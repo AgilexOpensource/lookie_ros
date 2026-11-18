@@ -724,6 +724,25 @@ def test_accepted_long_press_pulses_that_controller():
     assert sent == [("left", [0.5, 80.0])] and fake.stick_axis == "pitch"
 
 
+def test_sticks_drive_the_chassis_while_homing():
+    from types import SimpleNamespace
+    node = pytest.importorskip("lookie_teleop.node")
+    sent = []
+    state = {"fresh": True, "modules": {"left_arm_pose": {"enabled": True, "held_by": "home"}}}
+    fake = SimpleNamespace(
+        p={"ee_feedback_groups": [], "ignored_feedback_groups": [], "arm_feedback_groups": [],
+           "torso_feedback_groups": [], "chassis_feedback_groups": [], "kstone_timeout_s": 0.3,
+           "require_fresh": True},
+        kstate=state, kstate_t=1.0, cmd_vel_pub=object(),
+        profile=SimpleNamespace(chassis_velocity=SimpleNamespace(lower=np.full(3, -1.0), upper=np.full(3, 1.0))),
+        _health_modules=lambda: ["left_arm_pose"], _group_issues=lambda: {},
+        _stick_twist=lambda l, r: (0.3, 0.0, -0.5), _publish_twist=lambda cmd, now: sent.append(list(cmd)))
+    fake._kstone_reason = lambda now, **kw: node.TeleopNode._kstone_reason(fake, now, **kw)
+    node.TeleopNode._run_homed(fake, None, None, 1.1, homing=True)
+    node.TeleopNode._run_homed(fake, None, None, 1.1)      # homed: a held module still stops the base
+    assert sent == [[0.3, 0.0, -0.5], [0.0, 0.0, 0.0]]
+
+
 def mon_check_first(issues):
     return issues.get("headset") or next(iter(issues.values()))
 

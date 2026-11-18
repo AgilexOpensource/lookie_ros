@@ -105,7 +105,7 @@ Fields used from `/kstone/state`:
 Publishing rules:
 
 - All commands with a header are stamped with **this node's `now()`**; the XR data timestamps are not reused (kstone rejects timestamps older than 0.5 s or in the future).
-- Chassis `cmd_vel`: while Homed, or while Enabled and the headset is not driving the chassis, published **continuously** at ≥ 10 Hz (with the main loop), with 0 sent when the joysticks are centred; `cmd_vel` is not published while the headset drives the chassis pose (to avoid pre-empting the pose command). The kstone chassis velocity port times out after 0.25 s, so the chassis stops by itself once publishing stops.
+- Chassis `cmd_vel`: while Homing, Homed, or while Enabled and the headset is not driving the chassis, published **continuously** at ≥ 10 Hz (with the main loop), with 0 sent when the joysticks are centred; `cmd_vel` is not published while the headset drives the chassis pose (to avoid pre-empting the pose command). The kstone chassis velocity port times out after 0.25 s, so the chassis stops by itself once publishing stops.
 
 ### 2.3 Service calls
 
@@ -161,7 +161,7 @@ stateDiagram-v2
 | State | Publishes targets | Accepted inputs | Description |
 | --- | --- | --- | --- |
 | NotReady | End effectors only | B long press, index trigger | Startup state; the robot's position is unknown, so it must return Home first |
-| Homing | End effectors only (arm / waist / chassis target publishing is stopped first) | B short press, index trigger | Waits for kstone homing to complete; other inputs have no effect |
+| Homing | End effectors; chassis `cmd_vel` (joysticks, zero velocity with no input) | B short press, index trigger, joysticks (chassis only) | Arm / waist target publishing is stopped first, then waits for kstone homing to complete; the chassis is not homed, so the joysticks drive its translation and turning as usual (modules held by the kstone Home are not a disable reason); other inputs have no effect |
 | Homed | End effectors; chassis `cmd_vel` (joysticks, zero velocity without input) | A, B, Y, X, index trigger, joysticks (chassis only) | No arm / waist targets are sent, and the Home pose is held for A calibration; the joysticks only control chassis translation and turning, and right joystick y (waist offset) has no effect |
 | Enabled | Yes | All (A ignored) | Contains the per-arm sub-states |
 | Disabled | End effectors only (arms / waist / chassis keep their current targets) | B long press, index trigger | Only stops publishing commands (the enable service is not called); the chassis is sent zero velocity once and then publishing stops; joysticks / grip triggers have no effect, preventing accidental input |
@@ -199,8 +199,8 @@ stateDiagram-v2
 | X (left `buttons[3]`) | Long press 1 s | Homed, Enabled | Right joystick y adjusts waist Z ↔ waist pitch (default Z); **no emergency stop** |
 | Grip trigger `axes[3]` | Press threshold 0.6 / release 0.4 (hysteresis); interval between two presses ≤ `double_tap_s`=0.4 s and the second press kept held | Enabled | That arm Held → CatchUp; release → Held |
 | Index trigger `axes[2]` | Continuous value 0~1 | All states | Proportional end effector open/close (§10) |
-| Left joystick | Deadzone 0.15 | Homed, Enabled | Chassis translation velocity |
-| Right joystick x | Deadzone 0.15 | Homed, Enabled | Chassis turning velocity |
+| Left joystick | Deadzone 0.15 | Homing, Homed, Enabled | Chassis translation velocity |
+| Right joystick x | Deadzone 0.15 | Homing, Homed, Enabled | Chassis turning velocity |
 | Right joystick y | Deadzone 0.15 | Enabled | Waist Z or pitch **offset** integration (kept until the next return Home) |
 
 - A long press triggers **1 s after the press edge**, without waiting for release, so that the user does not have to guess when it counts.
