@@ -2,7 +2,7 @@
 
 [English](install.md)
 
-手动安装 Lookie 工作空间。[安装脚本](setup.zh-CN.md)会为整机执行同样的步骤。
+安装 Lookie 工作空间，可安装整机，也可只装单个功能包。
 
 已在 Ubuntu 22.04 + ROS 2 Humble 上测试通过。不支持更早的版本，更新的版本未经测试。下文命令以 Humble 为例。
 
@@ -85,7 +85,7 @@ python3 lookie_ros/scripts/lock_repos.py --check          # 已有仓库：列�
 python3 lookie_ros/scripts/lock_repos.py --checkout       # 检出固定的 commit（detached HEAD）
 ```
 
-`--checkout` 不会改动有未提交修改的仓库。要回到开发状态，重新检出分支（`git checkout main`，或 `lookie.repos` 中写的分支）。
+`--checkout` 会同时把子模块检出到固定 commit 所记录的版本，不会改动有未提交修改的仓库。要回到开发状态，重新检出分支（`git checkout main`，或 `lookie.repos` 中写的分支）。
 
 工作空间在真机上验证通过后，先推送所有仓库，再从该工作空间重新生成并提交：
 
@@ -125,9 +125,10 @@ source install/setup.bash
 ```bash
 vcs pull ~/lookie_ws/src
 vcs import --recursive --skip-existing ~/lookie_ws/src < ~/lookie_ws/src/lookie_ros/lookie.repos
+vcs custom ~/lookie_ws/src --git --args submodule update --init --recursive
 ```
 
-第二条命令导入新增的依赖仓库。使用固定版本时，只拉取 `lookie_ros`，再执行[固定版本](#固定版本)中的命令。
+第二条命令导入新增的依赖仓库。第三条把各仓库的子模块（例如 kstone 的 `third_party`）检出到该仓库记录的 commit；`vcs pull` 不会更新子模块。使用固定版本时，只拉取 `lookie_ros`，再执行[固定版本](#固定版本)中的命令。
 
 > **重要：** 更新后必须重新编译全部功能包（`python3 -m colcon build`）。只更新或只编译部分仓库时，配置与程序版本可能不一致，例如 kstone 启动即报 `unknown key`。编译后用 `python3 src/lookie_ros/scripts/check_install.py` 确认 install 与源码一致，见[回归检查](regression.zh-CN.md)。
 

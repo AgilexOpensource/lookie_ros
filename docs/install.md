@@ -2,7 +2,7 @@
 
 [中文](install.zh-CN.md)
 
-Manual install of the Lookie workspace. The [setup script](setup.md) runs the same steps for the whole robot.
+Install the Lookie workspace, for the whole robot or a single package.
 
 Tested on Ubuntu 22.04 with ROS 2 Humble. Older releases are not supported; newer ones are untested. The commands use Humble.
 
@@ -85,7 +85,7 @@ python3 lookie_ros/scripts/lock_repos.py --check          # existing repositorie
 python3 lookie_ros/scripts/lock_repos.py --checkout       # check out the pinned commits (detached HEAD)
 ```
 
-`--checkout` leaves repositories with uncommitted changes untouched. To return to development, check out the branch again (`git checkout main`, or the branch in `lookie.repos`).
+`--checkout` also checks out submodules at the commits each pinned commit records, and leaves repositories with uncommitted changes untouched. To return to development, check out the branch again (`git checkout main`, or the branch in `lookie.repos`).
 
 After verifying a workspace on the robot, push every repository, then regenerate the lock from that workspace and commit it:
 
@@ -125,9 +125,10 @@ In every terminal that runs Lookie, run `source ~/lookie_ws/install/setup.bash`;
 ```bash
 vcs pull ~/lookie_ws/src
 vcs import --recursive --skip-existing ~/lookie_ws/src < ~/lookie_ws/src/lookie_ros/lookie.repos
+vcs custom ~/lookie_ws/src --git --args submodule update --init --recursive
 ```
 
-The second command imports dependency repositories added since the last install. With pinned versions, pull only `lookie_ros`, then run the commands in [Pinned versions](#pinned-versions).
+The second command imports dependency repositories added since the last install. The third checks out each repository's submodules (for example kstone's `third_party`) at the commits that repository records; `vcs pull` does not update them. With pinned versions, pull only `lookie_ros`, then run the commands in [Pinned versions](#pinned-versions).
 
 > **Important:** Rebuild every package after updating (`python3 -m colcon build`). Updating or building only some repositories can leave configs and programs at different versions, for example kstone exiting at startup with `unknown key`. After building, confirm the install matches the source with `python3 src/lookie_ros/scripts/check_install.py`, see [Regression checks](regression.md).
 

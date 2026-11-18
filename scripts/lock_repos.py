@@ -7,7 +7,8 @@
                    remote (push first), so that the pin can be cloned anywhere.
   --from remote    write lookie.lock.repos from the current remote head of each branch.
   --check          compare the checked-out commits with lookie.lock.repos; exit 1 on a difference.
-  --checkout       check out the pinned commits (detached HEAD) in existing clean repositories.
+  --checkout       check out the pinned commits (detached HEAD) in existing clean repositories,
+                   with their submodules at the commits each pinned commit records.
 
 New repositories are cloned with: vcs import --recursive < lookie.lock.repos
 """
@@ -117,16 +118,18 @@ def checkout() -> int:
             print(f'{name}: missing; clone it with vcs import < lookie.lock.repos', file=sys.stderr)
             failed += 1
             continue
-        if git(repo, 'rev-parse', 'HEAD') == commit:
-            continue
-        if git(repo, 'status', '--porcelain'):
-            print(f'{name}: has uncommitted changes, left unchanged', file=sys.stderr)
-            failed += 1
-            continue
-        if not has_commit(repo, commit):
-            git(repo, 'fetch', '--quiet', 'origin', entry['version'])
-        git(repo, 'checkout', '--quiet', '--detach', commit)
-        print(f'{name:20} -> {commit[:12]}', file=sys.stderr)
+        if git(repo, 'rev-parse', 'HEAD') != commit:
+            if git(repo, 'status', '--porcelain'):
+                print(f'{name}: has uncommitted changes, left unchanged', file=sys.stderr)
+                failed += 1
+                continue
+            if not has_commit(repo, commit):
+                git(repo, 'fetch', '--quiet', 'origin', entry['version'])
+            git(repo, 'checkout', '--quiet', '--detach', commit)
+            print(f'{name:20} -> {commit[:12]}', file=sys.stderr)
+        # Submodules at the commits this pinned commit records.
+        if (repo / '.gitmodules').exists():
+            git(repo, 'submodule', 'update', '--init', '--recursive', '--quiet')
     return 1 if failed else 0
 
 
