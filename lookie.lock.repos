@@ -12,7 +12,7 @@ repositories:
   lookie_description:
     type: git
     url: https://github.com/AgilexOpensource/lookie_description.git
-    version: c5bfce2fc2ab0a8be15b114d267513faf81e9f1d
+    version: 80275446d846621584f143f3116ca8342b1aba67
   xr_media_ros:
     type: git
     url: https://github.com/AgilexOpensource/xr_media_ros.git

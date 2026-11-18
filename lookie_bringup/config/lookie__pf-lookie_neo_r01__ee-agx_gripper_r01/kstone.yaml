@@ -54,14 +54,14 @@ robot:
     l_arm_joint2: 1.57
     l_arm_joint3: -1.57
     l_arm_joint4: 1.57
-    l_arm_joint5: 1.57
+    l_arm_joint5: 0.0
     l_arm_joint6: 0.0
     l_arm_joint7: 0.0
     r_arm_joint1: 0.0
     r_arm_joint2: 1.57
     r_arm_joint3: 1.57
     r_arm_joint4: 1.57
-    r_arm_joint5: -1.57
+    r_arm_joint5: 0.0
     r_arm_joint6: 0.0
     r_arm_joint7: 0.0
 modules:

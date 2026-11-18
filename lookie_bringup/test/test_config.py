@@ -48,6 +48,15 @@ def test_kstone_config_per_model(path):
 
 
 @pytest.mark.parametrize('path', CONFIGS, ids=_model)
+def test_initial_pose_matches_kstone(path):
+    cfg = load_bringup_config(path, _lookup)
+    description = yaml.safe_load(cfg.initial.read_text())['zeros']
+    kstone = yaml.safe_load(load_kstone_config(path, _lookup).read_text())['robot']['initial']
+    assert set(kstone) <= set(description)
+    assert {j: description[j] for j in kstone} == pytest.approx(kstone)
+
+
+@pytest.mark.parametrize('path', CONFIGS, ids=_model)
 def test_bridge_drops_silent_modules_before_kstone_feedback_timeout(path):
     bridge = yaml.safe_load((path.parent / 'driver_joint_bridge.yaml').read_text())
     kstone = yaml.safe_load((path.parent / 'kstone.yaml').read_text())

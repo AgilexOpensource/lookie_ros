@@ -111,7 +111,14 @@ ros2 launch lookie_bringup kstone.launch.py debug_port:=7311
 ~/.venvs/kstone-viewer/bin/kstone-viewer --connect 127.0.0.1:7311
 ```
 
-Open http://127.0.0.1:8080. To view it from another computer, run `ssh -N -L 8080:127.0.0.1:8080 <user>@<robot-ip>` there and open the same address.
+Both commands run on the robot. Open http://127.0.0.1:8080 in the robot's browser.
+
+The debug server and the viewer page listen only on `127.0.0.1`; from another computer, reach them through an SSH tunnel. Run it on that computer and keep it open:
+
+| Viewer runs on | Tunnel | Then |
+|---|---|---|
+| The robot (as above) | `ssh -N -L 8080:127.0.0.1:8080 <user>@<robot-ip>` | Open http://127.0.0.1:8080 |
+| The other computer | `ssh -N -L 7311:127.0.0.1:7311 <user>@<robot-ip>` | Run `kstone-viewer --connect 127.0.0.1:7311` there, then open http://127.0.0.1:8080 |
 
 ## Troubleshooting
 
