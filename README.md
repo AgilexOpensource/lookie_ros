@@ -33,12 +33,9 @@ The robot needs the CAN interfaces listed in the [CAN guide](lookie_bringup/docs
 
 ## Install
 
-- [Setup script](docs/setup.md): interactive, for quick deployment such as production test stations.
-- [Manual install](docs/install.md): the same steps by hand, also for a single package.
+See the [install guide](docs/install.md), for the whole robot or a single package.
 
 ## Quick start
-
-With the setup script, step 1 is done: instead, run `source <workspace>/lookie_env.bash` in each terminal (it also sets `LOOKIE_MODEL`).
 
 1. Choose the model once. Each folder in [lookie_bringup/config](lookie_bringup/config) is one model:
 

@@ -76,7 +76,7 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    S0["Install<br/>scripts/setup.sh or manual<br/>vcs import lookie.repos"] --> S1["Set LOOKIE_MODEL<br/>(setup.sh: lookie_env.bash)"]
+    S0["Install<br/>vcs import lookie.repos<br/>colcon build"] --> S1["Set LOOKIE_MODEL"]
     S1 --> S2["ros2 run lookie_bringup<br/>can_bind.sh"]
     S2 --> S3["Terminal 1<br/>lookie.launch.py<br/>drivers + robot_state_publisher<br/>(sim:=true uses joint sliders)"]
     S3 --> S4["Terminal 2<br/>kstone.launch.py<br/>holds current pose once feedback is fresh"]

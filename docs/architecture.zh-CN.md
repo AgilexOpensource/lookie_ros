@@ -76,7 +76,7 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    S0["安装<br/>scripts/setup.sh 或手动<br/>vcs import lookie.repos"] --> S1["设置 LOOKIE_MODEL<br/>(setup.sh: lookie_env.bash)"]
+    S0["安装<br/>vcs import lookie.repos<br/>colcon build"] --> S1["设置 LOOKIE_MODEL"]
     S1 --> S2["ros2 run lookie_bringup<br/>can_bind.sh"]
     S2 --> S3["终端1<br/>lookie.launch.py<br/>驱动 + robot_state_publisher<br/>(sim:=true 用关节滑块代替驱动)"]
     S3 --> S4["终端2<br/>kstone.launch.py<br/>收到新鲜反馈后保持当前位姿"]
