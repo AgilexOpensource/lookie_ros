@@ -16,7 +16,7 @@ repositories:
   xr_media_ros:
     type: git
     url: https://github.com/AgilexOpensource/xr_media_ros.git
-    version: ca408d190ed0a0de4527443243bb777240c1373a
+    version: 419e26584645ef9f0e05cb9379a9d1196290004f
   head_ros:
     type: git
     url: https://github.com/AgilexOpensource/head_ros.git

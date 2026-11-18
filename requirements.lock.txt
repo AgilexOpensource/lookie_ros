@@ -3,6 +3,6 @@
 pyAgxArm @ git+https://github.com/agilexrobotics/pyAgxArm.git@d90e234ba8e408cfa964b38aa9120b3131fc9f85
 agx_motor_sdk @ git+https://github.com/kehuanjack/agx_motor_sdk.git@55c369e0db79114609cfc3001b4ada001bc71762
 bc-stark-sdk==2.0.9
-xr_media @ git+https://github.com/AgilexOpensource/xr_media.git@21c82166a93654fcdb11b64d09df373e0d48a34d
+xr_media @ git+https://github.com/AgilexOpensource/xr_media.git@a588e832bede00d76a71d6aeac197e853a5f47af
 numpy<2
 setuptools<80
