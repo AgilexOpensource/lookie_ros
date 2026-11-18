@@ -53,3 +53,5 @@
     is_scout_mini: true
     is_omni_wheel: false
     odom_topic_name: odom
+    cmd_velocity_signs: [1, 1, -1]    # [x, y, wz]; this base turned opposite to angular.z
+    odom_velocity_signs: [1, 1, -1]   # [x, y, wz]; and reported yaw opposite too

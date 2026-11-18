@@ -53,5 +53,5 @@
     is_scout_mini: true
     is_omni_wheel: true
     odom_topic_name: odom
-    odom_linear_velocity_sign: -1
-    cmd_lateral_velocity_sign: -1   # positive linear.y drove this base to its right
+    cmd_velocity_signs: [1, -1, 1]    # [x, y, wz]; positive linear.y drove this base to its right
+    odom_velocity_signs: [-1, 1, 1]   # [x, y, wz]; longitudinal feedback was reversed
