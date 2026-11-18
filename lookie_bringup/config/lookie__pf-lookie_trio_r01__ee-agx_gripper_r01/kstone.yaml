@@ -240,9 +240,12 @@ modules:
       - [r_flange_0, r_arm_link5_0]
       - [l_arm_link5_0, l_arm_link7_0]
       - [r_arm_link5_0, r_arm_link7_0]
-    # the two grippers (base, jaws) never collide-check each other
+    # the two gripper bases (with link7/flange) collide-check each other; the jaws are excluded from the other side
     exclude_subtrees:
-      - [l_gripper_base_link, r_gripper_base_link]
+      - [l_gripper_link1, r_gripper_base_link]
+      - [l_gripper_link2, r_gripper_base_link]
+      - [r_gripper_link1, l_gripper_base_link]
+      - [r_gripper_link2, l_gripper_base_link]
     closed_loop: false
     # constraint: {clearance: 0.002, activation_margin: 0.02, hysteresis: 0.005, gain: 1.5}
     constraint: {clearance: 0.01, activation_margin: 0.01, hysteresis: 0.005, gain: 1.5, approach_deceleration: 20}
