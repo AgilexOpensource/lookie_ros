@@ -210,7 +210,7 @@ modules:
     frame: head_link2
     joints: [head_joint1, head_joint2]
     frames: [l_gripper_tip, r_gripper_tip]
-    max_velocity: 1.5
+    max_velocity: 0.5
     target_idle_s: 5.0
   com:
     type: center_of_mass

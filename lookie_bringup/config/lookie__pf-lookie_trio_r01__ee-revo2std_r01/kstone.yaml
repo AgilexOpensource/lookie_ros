@@ -210,7 +210,7 @@ modules:
     frame: head_link2
     joints: [head_joint1, head_joint2]
     frames: [left_base_link, right_base_link]
-    max_velocity: 1.5
+    max_velocity: 0.5
     target_idle_s: 5.0
   com:
     type: center_of_mass
