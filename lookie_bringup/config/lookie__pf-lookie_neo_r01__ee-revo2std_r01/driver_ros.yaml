@@ -18,6 +18,7 @@
     auto_enable: true
     feedback_rate: 50.0
     control_enabled: true
+    velocity_joints: [torso_joint1]
 
 /**/left_arm/agx_arm_ctrl_single_node:
   ros__parameters:

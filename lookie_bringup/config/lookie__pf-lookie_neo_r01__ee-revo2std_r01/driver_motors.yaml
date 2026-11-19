@@ -38,11 +38,11 @@ lift:
       # m ↔ mm（固件位置单位 mm，ROS/URDF 为 m）
       polarity: 0.001
       # profile_* 直发电机空间 [mm/s]、[mm/s²]
-      profile_vel: 10.0
-      profile_accel: 30.0
-      profile_decel: 30.0
+      profile_vel: 20.0
+      profile_accel: 80.0
+      profile_decel: 80.0
       lower_limit: 0.0
-      upper_limit: 0.4
+      upper_limit: 0.395
 
     # 腰部 pitch RB200
     - joint_name: torso_joint2
