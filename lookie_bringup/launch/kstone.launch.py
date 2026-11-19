@@ -5,7 +5,8 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.logging import get_logger
 
-from lookie_bringup.config import feedback_timeout_warnings, load_bridge_topics, load_kstone_config
+from lookie_bringup.config import (feedback_timeout_warnings, load_bridge_topics, load_kstone_config,
+                                   motor_feedback_timeout_warnings)
 from lookie_bringup.launch_utils import arg, common_arguments, include, resolve_common
 from lookie_driver.layout import CHASSIS_NAMESPACE, DRIVER_NAMESPACE
 
@@ -14,7 +15,8 @@ def _setup(context, *args, **kwargs):
     config_path, cfg, ns = resolve_common(context)
     topics = load_bridge_topics(cfg.bridge_config)
     kstone_config = load_kstone_config(config_path, get_package_share_directory)
-    for warning in feedback_timeout_warnings(cfg.bridge_config, kstone_config):
+    for warning in (feedback_timeout_warnings(cfg.bridge_config, kstone_config)
+                    + motor_feedback_timeout_warnings(cfg.params_file, kstone_config)):
         get_logger('lookie_bringup').warning(warning)
     driver = DRIVER_NAMESPACE
     return [include('lookie_control', 'kstone.launch.py', {

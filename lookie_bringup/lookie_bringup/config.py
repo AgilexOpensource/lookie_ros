@@ -164,3 +164,37 @@ def feedback_timeout_warnings(bridge_config, kstone_config) -> list:
             f'feedback_timeout_s ({kstone}); a silent driver is detected only after {bridge + kstone:.2f} s, '
             f'with kstone solving on its frozen joint positions until then '
             f'({bridge_config}, {kstone_config})']
+
+
+MOTOR_DRIVER_NODES = ('head_node', 'lift_node', 'fold_node')
+MOTOR_FEEDBACK_TIMEOUT_DEFAULT = 0.5  # head/lift/fold node default when the params omit it
+MOTOR_FEEDBACK_TIMEOUT_MARGIN = 0.05
+
+
+def motor_feedback_timeout_warnings(params_file, kstone_config) -> list:
+    """Cross-file timing rule: keep each motor driver's feedback_timeout above kstone's.
+
+    After an e-stop release or power loss the head/lift/fold drivers re-enable a joint and withhold
+    its feedback for at least their feedback_timeout. Only a gap longer than kstone's
+    feedback_timeout_s makes kstone detach the group and resync to the measured position instead
+    of driving the joint to the target held before the stop.
+    Returns warnings; never raises.
+    """
+    try:
+        kstone = _load_mapping(kstone_config).get('feedback_timeout_s')
+        if kstone is None:
+            return []
+        kstone = float(kstone)
+        timeouts = {}
+        for key, section in _load_mapping(params_file).items():
+            node = str(key).rsplit('/', 1)[-1]
+            if node in MOTOR_DRIVER_NODES:
+                params = (section or {}).get('ros__parameters') or {}
+                timeouts[node] = float(params.get('feedback_timeout', MOTOR_FEEDBACK_TIMEOUT_DEFAULT))
+    except Exception as exc:  # noqa: BLE001 - a check must not stop the launch
+        return [f'could not compare motor feedback timeouts: {exc}']
+    return [f'{node} feedback_timeout ({timeout}) must exceed kstone feedback_timeout_s ({kstone}) '
+            f'by at least {MOTOR_FEEDBACK_TIMEOUT_MARGIN} s; otherwise a joint re-enabled after an e-stop '
+            f'or power loss may jump to the target held before it ({params_file}, {kstone_config})'
+            for node, timeout in timeouts.items()
+            if timeout - kstone < MOTOR_FEEDBACK_TIMEOUT_MARGIN]

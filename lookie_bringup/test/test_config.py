@@ -7,7 +7,7 @@ import yaml
 
 from lookie_bringup.config import (
     available_models, feedback_timeout_warnings, load_bridge_topics, load_bringup_config, load_kstone_config,
-    load_teleop_config, resolve_path, select_bringup_config)
+    load_teleop_config, motor_feedback_timeout_warnings, resolve_path, select_bringup_config)
 
 PKG = Path(__file__).resolve().parents[1]
 SRC = PKG.parents[1]
@@ -81,6 +81,30 @@ def test_feedback_timeout_warnings(tmp_path, bridge, kstone, warns):
     (tmp_path / 'b.yaml').write_text(bridge)
     (tmp_path / 'k.yaml').write_text(kstone)
     assert bool(feedback_timeout_warnings(tmp_path / 'b.yaml', tmp_path / 'k.yaml')) == warns
+
+
+@pytest.mark.parametrize('path', CONFIGS, ids=_model)
+def test_model_motor_feedback_timeouts_raise_no_launch_warning(path):
+    assert motor_feedback_timeout_warnings(path.parent / 'driver_ros.yaml', path.parent / 'kstone.yaml') == []
+
+
+LIFT = '/**/lift_node:\n  ros__parameters:\n    module_key: lift\n'
+
+
+@pytest.mark.parametrize('params, kstone, warns', [
+    (LIFT, 'feedback_timeout_s: 0.25', False),  # driver default 0.5
+    (LIFT + '    feedback_timeout: 0.35\n', 'feedback_timeout_s: 0.25', False),
+    (LIFT + '    feedback_timeout: 0.28\n', 'feedback_timeout_s: 0.25', True),
+    (LIFT + '    feedback_timeout: 0.0\n', 'feedback_timeout_s: 0.25', True),
+    (LIFT, 'feedback_timeout_s: 0.5', True),
+    (LIFT, 'modules: {}', False),
+    ('/**/chassis/scout:\n  ros__parameters:\n    feedback_timeout: 0.0\n', 'feedback_timeout_s: 0.25', False),
+    (LIFT + '    feedback_timeout: x\n', 'feedback_timeout_s: 0.25', True),
+])
+def test_motor_feedback_timeout_warnings(tmp_path, params, kstone, warns):
+    (tmp_path / 'p.yaml').write_text(params)
+    (tmp_path / 'k.yaml').write_text(kstone)
+    assert bool(motor_feedback_timeout_warnings(tmp_path / 'p.yaml', tmp_path / 'k.yaml')) == warns
 
 
 @pytest.mark.parametrize('path', CONFIGS, ids=_model)
