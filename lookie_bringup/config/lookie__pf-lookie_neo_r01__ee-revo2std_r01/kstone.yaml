@@ -74,14 +74,12 @@ modules:
       base_frame: chassis_base_link
       max_linear_velocity: 0.5  # real-robot cap, kept
       max_angular_velocity: 1.0
-      max_linear_acceleration: 2.5
-      max_linear_deceleration: 2.5
-      max_angular_acceleration: 5.0
-      max_angular_deceleration: 5.0
-      position_tolerance: 0.001
-      orientation_tolerance: 0.002
-      target_position_deadband: 0.02
-      target_orientation_deadband: 0.035
+      max_linear_acceleration: 0.6
+      max_linear_deceleration: 1.0
+      max_angular_acceleration: 0.65
+      max_angular_deceleration: 0.65
+      position_tolerance: 0.01
+      orientation_tolerance: 0.017
     # period_s: 0.02  # engine dt replaces it
   torso_pose:
     type: frame_target
