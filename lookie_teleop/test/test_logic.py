@@ -1076,24 +1076,33 @@ def test_controller_tcp_is_mirrored_for_the_left_controller():
     np.testing.assert_allclose(left[:3, :3], mirror @ right[:3, :3] @ mirror, atol=1e-12)
 
 
-def test_chassis_mode_pitches_the_waist_about_its_pivot():
-    """Chassis mode: the pitch axis (pitch_pivot below the torso frame) keeps its x; waist mode is unchanged."""
+def test_waist_pitches_about_its_pivot_in_both_modes():
+    """The torso pitches about its pitch axis (pitch_pivot below the torso frame); forward moves that axis,
+    chassis mode holds it. The arm frame leaves the swing out, so leaning alone does not move the arms."""
     from lookie_teleop.mapping import Waist, WaistConfig
     cfg = WaistConfig(x_rate=10.0, z_rate=10.0, pitch_rate=10.0, yaw_rate=10.0, pitch_pivot=0.27)
     chassis = frozenset({"waist_z", "waist_pitch"})
-    w = Waist([0.1, 0.0, 1.0], 0.0, 0.0, cfg, ALL_AXES)
-    w.update(0.02, (0.0, 0.0, 0.0, 0.0), chassis)
+    for axes in (chassis, None):
+        w = Waist([0.1, 0.0, 1.0], 0.0, 0.0, cfg, ALL_AXES)
+        for _ in range(100):
+            w.update(0.02, (0.0, 0.5, 0.0, 0.0), axes)
+        assert w.target[1] == pytest.approx(0.5)
+        assert w.position[0] == pytest.approx(0.1 + 0.27 * math.sin(0.5))
+        assert w.position[2] == pytest.approx(1.0 - 0.27 * (1.0 - math.cos(0.5)))   # the axis keeps its height
+        np.testing.assert_allclose(w.arm_frame()[:3, 3], [0.1, 0.0, 1.0], atol=1e-9)
+    for _ in range(100):                                      # waist mode: forward moves the axis and the arms
+        w.update(0.02, (0.0, 0.0, 0.0, 0.05))
+    assert w.position[0] == pytest.approx(0.15)
+    assert w.arm_frame()[0, 3] == pytest.approx(0.15)
+    for _ in range(100):                                      # squatting lowers the axis and the arms with it
+        w.update(0.02, (-0.1, 0.0, 0.0, 0.05))
+    assert w.position[2] == pytest.approx(0.9)
+    assert w.arm_frame()[2, 3] == pytest.approx(0.9)
+    tilted = Waist([0.1, 0.0, 1.0], 0.3, 0.0, cfg, ALL_AXES)  # pitched at A: no jump, arm frame from A
+    tilted.update(0.02, (0.0, 0.0, 0.0, 0.0))
+    assert tilted.position[0] == pytest.approx(0.1)
+    assert tilted.arm_frame()[0, 3] == pytest.approx(0.1)
+    no_x = Waist([0.1, 0.0, 1.0], 0.0, 0.0, cfg, frozenset({"waist_z", "waist_pitch"}))
     for _ in range(100):
-        w.update(0.02, (0.0, 0.5, 0.0, 0.0), chassis)
-    assert w.target[1] == pytest.approx(0.5)
-    axis_x = w.position[0] - 0.27 * math.sin(w.target[1])
-    assert axis_x == pytest.approx(0.1)
-    assert w.position[0] == pytest.approx(0.1 + 0.27 * math.sin(0.5))
-    assert w.arm_frame()[0, 3] == pytest.approx(0.1)       # the arms do not move with the torso swing
-    for _ in range(100):                                      # back to waist mode: no jump, x held
-        w.update(0.02, (0.0, 0.0, 0.0, 0.0))
-    assert w.arm_frame()[0, 3] == pytest.approx(w.position[0] - 0.27 * math.sin(0.5))
-    still = Waist([0.1, 0.0, 1.0], 0.0, 0.0, cfg, ALL_AXES)
-    for _ in range(100):
-        still.update(0.02, (0.0, 0.5, 0.0, 0.0))
-    assert still.position[0] == pytest.approx(0.1)
+        no_x.update(0.02, (0.0, 0.5, 0.0, 0.0))
+    assert no_x.position[0] == pytest.approx(0.1)             # no waist x: nothing to pivot

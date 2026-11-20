@@ -60,11 +60,14 @@ class WaistConfig:
     z_rate: float = 0.20
     pitch_rate: float = 0.80
     yaw_rate: float = 1.00
-    pitch_pivot: float = 0.0  # pitch axis on the torso frame's -z (m); chassis mode keeps its x (see update)
+    pitch_pivot: float = 0.0  # pitch axis on the torso frame's -z (m); with waist_x the torso pitches about it
 
 
 class Waist:
     """Torso target maintained by teleop; y held at its A value, roll not mapped (§8.2).
+
+    With waist_x and ``pitch_pivot`` > 0, x and z are those of the pitch axis (``pitch_pivot`` below the
+    torso frame along its -z) and the torso frame is placed from it, so the torso pitches about that axis.
 
     ``base`` is the headset-derived part, held while not driven. Z/pitch are absolute w.r.t. A, so
     re-engaging after the operator moved re-aligns them smoothly (rate limit); x (forward) and yaw are
@@ -78,20 +81,21 @@ class Waist:
 
     def __init__(self, position, pitch: float, yaw: float, cfg: WaistConfig, axes: frozenset):
         self.cfg, self.axes = cfg, axes
-        self.x0, self.y = float(position[0]), float(position[1])
-        self.base_x = self.target_x = self.x_ref_robot = self.x0
-        self.z0, self.pitch0, self.yaw0 = float(position[2]), float(pitch), float(yaw)
-        self.base = np.array([self.z0, self.pitch0, self.yaw0])
-        self.target = self.base.copy()
+        self.y = float(position[1])
+        self.pitch0, self.yaw0 = float(pitch), float(yaw)
+        self.target = np.array([0.0, self.pitch0, self.yaw0])
+        self.d0 = self._pivot()              # pitch axis -> torso frame at A
+        self.x0, self.z0 = float(position[0]) - self.d0[0], float(position[2]) - self.d0[2]   # the axis at A
+        self.target[0] = self.z0             # target / base: (axis z, pitch, yaw)
+        self.base = self.target.copy()
+        # axis x: headset target, its reference at dual activation, and the rate-limited value
+        self.base_x = self.axis_x = self.x_ref_robot = self.x0
         self.offset = np.zeros(2)            # dz, dpitch
         self.arm_dz = 0.0                    # headset z below the lift's lower end, carried by the arms
         self.zh0 = self.theta0 = 0.0
         self.yaw_ref_robot = self.yaw0
         self.yaw_body_last = 0.0
         self.yaw_turn = 0.0                  # operator's turn since the reference, unwrapped
-        self.pivot_x = None                  # held x of the pitch axis while the headset drives the chassis
-        self.arm_dx = 0.0                    # torso x the pivot pitch added since; the arm frame leaves it out
-        self.pivot_dx0 = 0.0
 
     def set_body_reference(self, zh0: float, theta0: float) -> None:
         self.zh0, self.theta0 = zh0, theta0
@@ -106,9 +110,10 @@ class Waist:
     def hold_at(self, position, pitch: float, yaw: float) -> None:
         """Make the measured torso pose the held target (the stick offset is kept), so a held waist is
         not driven back to an older target once its feedback recovers."""
-        self.target_x = self.base_x = float(position[0])
-        self.target = np.array([float(position[2]), float(pitch), float(yaw)])
-        self.pivot_x = None
+        self.target = np.array([0.0, float(pitch), float(yaw)])
+        d = self._pivot()
+        self.target[0] = float(position[2]) - d[2]
+        self.axis_x = self.base_x = float(position[0]) - d[0]
         self.base = self.target - np.array([self.offset[0], self.offset[1], 0.0])
 
     def _bounds(self, i: int):
@@ -137,15 +142,15 @@ class Waist:
         """``body`` = (zh, theta, yaw_h[, forward]) while dual-active, else None (hold).
 
         ``forward``: body displacement (m) along the heading recorded with record_x_reference().
-        ``axes``: the axes the headset drives now (default all enabled ones); the others hold. When given
-        without waist_x (chassis mode), x follows the pitch about ``pitch_pivot``: that axis keeps its x, so
-        leaning pitches the torso about it instead of about the torso frame."""
+        ``axes``: the axes the headset drives now (default all enabled ones); the others hold.
+        With a pivot, ``zh`` and ``forward`` move the pitch axis; chassis mode (no waist_x) holds its x."""
         cfg = self.cfg
         axes = self.axes if axes is None else self.axes & axes
         if body is not None:
             zh, theta, yaw_h, *rest = body
             if "waist_x" in axes and rest:
-                self.base_x = float(np.clip(self.x_ref_robot + cfg.k_x * rest[0], *cfg.x_limits))
+                lo, hi = np.asarray(cfg.x_limits) - self._pivot()[0]
+                self.base_x = float(np.clip(self.x_ref_robot + cfg.k_x * rest[0], lo, hi))
             if "waist_z" in axes:
                 self.base[0] = self.z0 + cfg.k_z * (zh - self.zh0)
             if "waist_pitch" in axes:
@@ -162,34 +167,34 @@ class Waist:
                 if i == 0:
                     lo = min(lo, self.z0 + cfg.z_range[0])
                 self.base[i] = np.clip(self.base[i], lo - self.offset[i], hi - self.offset[i])
-        self.target_x = float(rate_limit(self.target_x, self.base_x, cfg.x_rate * dt))
+        self.axis_x = float(rate_limit(self.axis_x, self.base_x, cfg.x_rate * dt))
         # one final clamp for headset + stick, so the torso target sent to kstone is always in range
         desired = self.base + np.array([self.offset[0], self.offset[1], 0.0])
         for i in (0, 1):
             desired[i] = np.clip(desired[i], *self._bounds(i))
         step = np.array([cfg.z_rate, cfg.pitch_rate, cfg.yaw_rate]) * dt
         self.target = rate_limit(self.target, desired, step)
-        pivot = cfg.pitch_pivot > 0.0 and axes is not None and "waist_x" in self.axes and "waist_x" not in axes
-        if pivot:
-            if self.pivot_x is None:
-                self.pivot_x = self.target_x - self._pivot_dx()
-                self.pivot_dx0 = self._pivot_dx() - self.arm_dx
-            self.target_x = self.base_x = self.pivot_x + self._pivot_dx()
-            self.arm_dx = self._pivot_dx() - self.pivot_dx0
-        else:
-            self.pivot_x = None
-        self.target_x = float(np.clip(self.target_x, *cfg.x_limits))
         lo = self._bounds(0)[0]
         below = float(np.clip(self.base[0] + self.offset[0] - lo, min(0.0, self.z0 + cfg.z_range[0] - lo), 0.0))
         self.arm_dz = float(rate_limit(self.arm_dz, below, step[0]))
 
-    def _pivot_dx(self) -> float:
-        """x (base frame) from the pitch axis to the torso frame at the current target."""
-        return float((self.rotation @ np.array([0.0, 0.0, self.cfg.pitch_pivot]))[0])
+    def _pivot(self) -> np.ndarray:
+        """Pitch axis -> torso frame (base frame) at the current target (0 without waist_x)."""
+        if "waist_x" not in self.axes:
+            return np.zeros(3)
+        return self.rotation @ np.array([0.0, 0.0, self.cfg.pitch_pivot])
+
+    @property
+    def axis(self) -> np.ndarray:
+        """Pitch axis target (the torso frame itself without a pivot)."""
+        return np.array([self.axis_x, self.y, self.target[0]])
 
     @property
     def position(self) -> np.ndarray:
-        return np.array([self.target_x, self.y, self.target[0]])
+        """Torso frame target."""
+        p = self.axis + self._pivot()
+        p[0] = float(np.clip(p[0], *self.cfg.x_limits))
+        return p
 
     @property
     def rotation(self) -> np.ndarray:
@@ -204,10 +209,10 @@ class Waist:
         return heading_frame(self.position, self.target[2])
 
     def arm_frame(self) -> np.ndarray:
-        """F_t without the x the pivot pitch added (``arm_dx``, kept after chassis mode so the arms do not
-        jump): the torso swings about its pitch axis, the arm targets stay put like the operator's hands
-        relative to the hip."""
-        return heading_frame(self.position - np.array([self.arm_dx, 0.0, 0.0]), self.target[2])
+        """F_t without the swing the pitch about the pivot added since A: the torso swings about its pitch
+        axis, the arm targets stay put like the operator's hands relative to the hip (the lean swing of the
+        hands comes from the controllers, §8.1)."""
+        return heading_frame(self.axis + self.d0, self.target[2])
 
 
 @dataclass

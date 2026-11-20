@@ -54,8 +54,8 @@ PARAMS = {
     "body_axes": ["chassis", "waist_x", "waist_z", "waist_pitch", "waist_yaw"],
     # distance (m) from the robot's last waist pitch axis to chest_link (URDF), the operator's hip taken the
     # same distance below the headset: the arm frame origin and the chassis point then stay at the hip-fixed
-    # point of A's lean, so leaning swings the hands about the hip and does not walk the base; in chassis
-    # mode the torso also pitches about that axis, its x held (waist_x only). 0 = the headset / chest itself
+    # point of A's lean, so leaning swings the hands about the hip and drives neither waist x nor the base;
+    # the torso also pitches about that axis, which the hip drives (waist_x only). 0 = the headset / chest itself
     "lean_pivot_m": 0.0,
     "long_press_s": 1.0, "double_tap_s": 0.4, "grip_on": 0.6, "grip_off": 0.4,
     "haptic_long_press": [1.0, 100.0, 2.0, 250.0], "haptic_grip_engage": [1.0, 100.0],
@@ -634,9 +634,10 @@ class TeleopNode(Node):
         self.waist.set_body_reference(ref.zh0, ref.theta0)
         self.waist.record_yaw_reference(ref.yaw_h0)
         headset = self.xr["headset"][0]
-        self._waist_fh_inv = invert(self.mount.heading(headset))
         self.lean0 = ref.theta0
-        self._record_chassis(self._lean_frame(self.mount.heading(headset), self.mount.lean(headset)))
+        fa = self._lean_frame(self.mount.heading(headset), self.mount.lean(headset))
+        self._waist_fh_inv = invert(fa)
+        self._record_chassis(fa)
         self.warnings = list(ref.warnings)
         self.xr_monitor.reset()
         for s in SIDES:
@@ -663,8 +664,9 @@ class TeleopNode(Node):
         headset = self.xr["headset"][0]
         self.waist.record_yaw_reference(self.mount.yaw(headset))
         self.waist.record_x_reference()
-        self._waist_fh_inv = invert(self.mount.heading(headset))
-        self._record_chassis(self._lean_frame(self.mount.heading(headset), self.mount.lean(headset)))
+        fa = self._lean_frame(self.mount.heading(headset), self.mount.lean(headset))
+        self._waist_fh_inv = invert(fa)
+        self._record_chassis(fa)
 
     def _halt(self):
         """Stop publishing arm/torso/chassis commands; one zero Twist; end effectors simply stop being sent."""
@@ -767,10 +769,10 @@ class TeleopNode(Node):
             self._record_references()
         self.dual_active = dual
         chassis_mode = self.body_mode == "chassis" and self.profile.has("chassis")
-        b = self.mount.body(headset)
-        forward = (self._waist_fh_inv @ b)[0, 3]   # body displacement along the heading at the reference
         lean = self.mount.lean(headset)
         fa = self._lean_frame(fh, lean)
+        # hip-point displacement along the heading at the reference: leaning alone does not move waist x
+        forward = (self._waist_fh_inv @ fa)[0, 3]
         # height: lean-compensated, so leaning alone does not move the lift
         body = (fa[2, 3], lean, self.mount.yaw(headset), forward)
         # chassis mode: the headset's planar motion drives the chassis, its height and lean still the waist
