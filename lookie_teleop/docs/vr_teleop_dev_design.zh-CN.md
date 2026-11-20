@@ -304,7 +304,7 @@ $$X_i^{T} = F_t(t)\cdot(\mathbf e_i, Q_i)$$
 - Lookie trio 的 $L$ = 0.27 m（torso_joint3 轴，URDF 0.2705）：底盘模式下由髋点驱动底盘，前倾不推动底盘。
 - 发布前转换到 `chassis_base_link`。$F_t(t)$ 使用**躯干目标**（遥操作自己维护的值）而非反馈，避免与 WBC 跟踪误差形成回路。
 
-### 8.2 腰部（双激活；腰部模式跟随全部腰轴，底盘模式只跟随 Z 和 pitch；neo 只有 pitch）
+### 8.2 腰部（双激活；腰部模式跟随全部腰轴，底盘模式只跟随 Z 和 pitch；neo 只有 Z 和 pitch）
 
 $$x^r_t = x^r_{ref} + k_x\,\big[F_h(ref)^{-1}F_h(t)\big]_x$$
 $$z^r_t = z^r_0 + k_z\,(z^h_t - z^h_0) + \Delta z_{joy}$$

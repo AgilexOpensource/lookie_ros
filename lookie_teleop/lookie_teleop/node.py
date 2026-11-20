@@ -361,7 +361,9 @@ class TeleopNode(Node):
             lo, hi = sorted((sign * float(port.lower[i]), sign * float(port.upper[i])))
             lim[role] = (lo, hi)
         cfg = self.waist_cfg
-        both = lambda a, b: (max(a[0], b[0]), min(a[1], b[1]))
+
+        def both(a, b):
+            return max(a[0], b[0]), min(a[1], b[1])
         self.waist_cfg = replace(cfg, x_limits=lim.get("x", cfg.x_limits), z_limits=lim.get("z", cfg.z_limits),
                                  pitch_limits=both(cfg.pitch_limits, lim.get("pitch", cfg.pitch_limits)),
                                  yaw_limits=both(cfg.yaw_limits, lim.get("yaw", cfg.yaw_limits)))

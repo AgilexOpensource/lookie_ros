@@ -304,7 +304,7 @@ $$X_i^{T} = F_t(t)\cdot(\mathbf e_i, Q_i)$$
 - Lookie trio uses $L$ = 0.27 m (torso_joint3 axis, URDF 0.2705): in chassis mode the hip point drives the base, so leaning does not push the base.
 - The target is converted to `chassis_base_link` before publishing. $F_t(t)$ uses the **torso target** (the value maintained by teleop itself) instead of feedback, to avoid forming a loop with the WBC tracking error.
 
-### 8.2 Waist (both arms engaged; waist mode follows all waist axes, chassis mode follows only Z and pitch; neo has pitch only)
+### 8.2 Waist (both arms engaged; waist mode follows all waist axes, chassis mode follows only Z and pitch; neo has Z and pitch only)
 
 $$x^r_t = x^r_{ref} + k_x\,\big[F_h(ref)^{-1}F_h(t)\big]_x$$
 $$z^r_t = z^r_0 + k_z\,(z^h_t - z^h_0) + \Delta z_{joy}$$

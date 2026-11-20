@@ -222,10 +222,11 @@ class ChassisConfig:
     diverge_ang: float = math.radians(15.0)
     diverge_v: float = 0.05               # ... and moving away from it faster than this (m/s) ...
     diverge_w: float = 0.1                # ... or turning away faster than this (rad/s) ...
-    diverge_s: float = 1.5                # ... for this long -> fault (a lagging base under a swaying
-                                          # operator moves away for up to ~0.7 s)
-    lateral: bool = True                  # False (differential): only the operator's forward walk moves the
-                                          # target, along its own heading; sideways steps are dropped
+    # ... for this long -> fault (a lagging base under a swaying operator moves away for up to ~0.7 s)
+    diverge_s: float = 1.5
+    # False (differential): only the operator's forward walk moves the target, along its own heading;
+    # sideways steps are dropped
+    lateral: bool = True
 
 
 # The pose target carries a wrapped yaw and the base turns the short way to it, so the target may never
