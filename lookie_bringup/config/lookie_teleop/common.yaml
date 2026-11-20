@@ -62,7 +62,6 @@
     chassis_vx_max: 1.0
     chassis_vy_max: 0.8
     chassis_w_max: 2.0
-    cmd_vel_min_hz: 10.0
 
     # arm workspace: no parameters; a cube around the home points taken at A (design §9.2)
 

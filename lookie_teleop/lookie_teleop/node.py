@@ -81,7 +81,7 @@ PARAMS = {
     # kstone feedback groups handled per part while enabled (design §12); any other stale group disables
     "arm_feedback_groups": ["left_arm", "right_arm"], "torso_feedback_groups": ["torso"],
     "chassis_feedback_groups": ["base"], "ignored_feedback_groups": ["head"],
-    "cmd_vel_min_hz": 10.0, "trigger_deadzone": 0.05,
+    "trigger_deadzone": 0.05,
     # end effectors are never homed: they stay under the main trigger in every state
     "home_modules": ["torso_pose", "left_arm_pose", "right_arm_pose"],
     "home_timeout_s": 20.0, "outcome_timeout_s": 1.0,
@@ -212,7 +212,6 @@ class TeleopNode(Node):
         self._ee_last = {s: (None, -1.0) for s in SIDES}
         self._last_tick = None
         self._last_status = -1.0
-        self._last_cmd_vel = -1.0
 
         xr = p["xr_namespace"].rstrip("/")
         for key, name in XR_NAMES.items():
@@ -954,7 +953,6 @@ class TeleopNode(Node):
         msg = Twist()
         msg.linear.x, msg.linear.y, msg.angular.z = (float(v) for v in cmd)
         self.cmd_vel_pub.publish(msg)
-        self._last_cmd_vel = now
 
     def _publish_pose(self, mid, pos, quat):
         pub = self.pose_pubs.get(mid)
