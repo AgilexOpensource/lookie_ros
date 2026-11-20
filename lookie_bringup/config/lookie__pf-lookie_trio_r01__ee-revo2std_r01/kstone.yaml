@@ -112,7 +112,7 @@ modules:
       orientation: {velocity: 3.0, acceleration: 5.0, deceleration: 5.0, reversal_deceleration: 10.0, jerk: 50.0}
   left_arm_pose:
     type: frame_target
-    frame: left_base_link  # no tool frame in this URDF
+    frame: l_palm  # palm point on the hand axis (URDF), mapped from the controller_tcp point
     joints: [l_arm_joint1, l_arm_joint2, l_arm_joint3, l_arm_joint4, l_arm_joint5, l_arm_joint6, l_arm_joint7]
     reference: chassis_base_link
     weight: 5
@@ -130,7 +130,7 @@ modules:
       orientation: {velocity: 5.0}
   right_arm_pose:
     type: frame_target
-    frame: right_base_link
+    frame: r_palm
     joints: [r_arm_joint1, r_arm_joint2, r_arm_joint3, r_arm_joint4, r_arm_joint5, r_arm_joint6, r_arm_joint7]
     reference: chassis_base_link
     weight: 5

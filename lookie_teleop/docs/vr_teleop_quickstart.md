@@ -52,7 +52,7 @@ flowchart LR
 | **B** | Long press | Robot returns to its initial pose (end effectors excluded) |
 | **B** | Short press | Stop teleoperation; the robot holds in place, preventing accidental input |
 | **A** | Long press | Calibrate and start teleoperation |
-| **Y** | Long press | Switch body motion between driving the chassis and the waist (omni chassis models only) |
+| **Y** | Long press | Switch body motion between driving the chassis and the waist (differential chassis models: chassis turning and forward only) |
 | **X** | Long press | Switch right joystick up/down between waist lift and pitch |
 | **Grip trigger** (middle finger) | Double-press, then hold | Control the arm on the same side; release to stop it |
 | **Index trigger** (index finger) | Press | Open and close the end effector on the same side; the deeper you press, the tighter it grips |
@@ -95,7 +95,7 @@ Long press **B**. The robot's torso and arms return to the initial pose and the 
 
 1. Stand up straight, facing the robot's forward direction.
 2. Hold both hands **directly in front of** your chest, **left hand on the left and right hand on the right, not crossed**.
-3. Your hand distance need not match the robot's: the arms align to the relative position of the two controllers, a different distance only shows a hint, and after activation the arms smoothly catch up to your hand distance. Palm orientation need not match either: the orientation you hold at the long press of A maps to the robot's current hand orientation.
+3. Your hand distance need not match the robot's: the arms align to the relative position of the two controllers, a different distance only shows a hint, and after activation the arms smoothly catch up to your hand distance. Controller orientation need not match either: orientation maps absolutely, a controller held level and forward with its front tipped up about 30° maps to the end-effector orientation after returning to the initial pose, and after activation the end effector turns smoothly to the controller orientation.
 4. Hold still and long press **A**. Teleoperation starts once calibration is complete.
 
 > - Recalibrate every time after returning to the initial pose.
@@ -106,7 +106,7 @@ Long press **B**. The robot's torso and arms return to the initial pose and the 
 
 1. **Double-press** a grip trigger and **hold** it on the second press. That controller vibrates once and the arm on that side starts following.
 2. At first, **keep your hand still or move it slowly** and wait for the robot arm to catch up with your hand smoothly.
-3. Once it has caught up, operate normally. The arm follows your hand's movement and rotation 1:1.
+3. Once it has caught up, operate normally. The arm follows your hand's movement and rotation 1:1. A point on the controller maps to the robot's end effector: about 6 cm ahead of the controller ↔ the gripper tip on gripper models; about 5 cm inward (towards your palm) ↔ the robot palm on dexterous-hand models. Turning your wrist turns the end effector about that point.
 4. **Release the grip trigger and the arm stops immediately.**
 
 > **Tip**: After releasing the grip trigger, you can reposition yourself or your hand, then reactivate. The arm smoothly catches up to the new position. Use this when you cannot reach or your posture is awkward.
@@ -125,14 +125,17 @@ Body motion drives the waist or chassis only while you **hold both grip triggers
 
 ### 5.1 Waist
 
-On omni chassis models, long press **Y** first to switch to waist mode. Differential chassis models are always in waist mode.
+Long press **Y** to switch between waist and chassis mode. The default is waist mode.
 
 | Your body motion | Omni chassis models (e.g. Trio) | Differential chassis models (e.g. Neo) |
 | --- | --- | --- |
 | Lean forward / back | Waist pitches forward / back | Waist pitches forward / back |
 | Move body forward / back | Waist moves forward / back | No response |
-| Squat / stand up | Waist lowers / rises | No response (use the right joystick) |
+| Squat / stand up | Waist lowers / rises | Waist lowers / rises (slowly; the arms follow at once) |
 | Turn in place | Waist turns | No response |
+
+> - When you lean forward / back, the robot chest pitches about the waist pitch axis, and the arms are not pushed out by it; reach with your hands to go further.
+> - The waist of differential chassis models cannot move forward or turn: when you move forward or turn in place as a whole, the arms keep their position and orientation on the robot. Turning only your head with the hands still turns the controllers relative to the headset, so the arms turn the other way; turn your hands with your head, or release the grip triggers first. To turn the robot, switch to chassis mode or use the right joystick.
 
 ### 5.2 Chassis
 
@@ -144,11 +147,12 @@ On omni chassis models, long press **Y** first to switch to waist mode. Differen
 | Left joystick left/right | Strafe left / right | No response |
 | Right joystick left/right | Turn in place | Turn in place |
 
-**Body drive** (omni chassis models only):
+**Body drive** (differential chassis models: turning and forward only):
 
 1. Long press **Y** to switch to chassis mode.
 2. Hold both grip triggers at the same time.
-3. Walk and turn. When you move forward, the robot moves forward; when you turn, the robot turns. Squatting / standing up and leaning still lower / raise and pitch the waist.
+3. Walk and turn. When you move forward, the robot moves forward (differential: walking forward / backward only, no sideways); when you turn, the robot turns, and the arms turn with it. Squatting / standing up and leaning still lower / raise and pitch the waist.
+4. Bending to reach does not drive the chassis: the chassis follows only the movement of your hip; the robot chest pitches about the waist pitch axis, which stays put on the base, and the arms are still placed only by your hands.
 
 > - Joysticks take priority: pushing a joystick pauses body drive, which resumes automatically when you release it.
 > - The chassis moves slightly slower than you. If it falls too far behind, the robot catches up at a limited speed and does not suddenly lunge.
@@ -158,7 +162,7 @@ On omni chassis models, long press **Y** first to switch to waist mode. Differen
 
 If the robot's waist height or pitch differs from your body, compensate with the joystick:
 
-- **Right joystick up/down**: fine-tunes waist **lift** by default. The arms rise and fall with the waist, keeping their height relative to the waist.
+- **Right joystick up/down**: fine-tunes waist **lift** by default. The arms rise and fall with the waist, keeping their height relative to the waist. On neo, squatting further once the lift is at its lowest lowers the active arms further.
 - Long press **X** to switch to fine-tuning waist **pitch**. This adjusts only the waist and does not affect the arm pose. Long press **X** again to switch back to lift.
 
 > The angle of the chest-mounted headset varies with how it is worn. If the robot's torso always leans further forward or back than you, use pitch fine-tuning to align it.
@@ -220,8 +224,7 @@ flowchart LR
 | Robot arm stops and does not follow after engaging | The hand was outside the engage limit when engaging | Move your hand back near the arms' initial pose; the arm then follows freely |
 | Arm does not move while holding the grip trigger | Not double-pressed; not calibrated; arm is catching up | Double-press and hold; complete calibration; hold your hand still and wait |
 | Robot does not respond when walking or squatting | Only one grip trigger held; wrong mode; joystick in use | Hold both grip triggers at the same time; long press Y to switch modes; release the joystick |
-| Long press Y does nothing | Differential chassis models do not support body drive of the chassis | Use the joysticks to drive the chassis |
-| Waist does not rise or lower when squatting | On differential chassis models, body motion only controls waist pitch | Use right joystick up/down to adjust lift |
+| Long press Y does nothing | Not homed / calibrated, or the model has no chassis | Long press A first |
 | Waist is higher / lower or leans further forward / back than you | Offset during calibration | Fine-tune with right joystick up/down; long press X to switch to pitch fine-tuning |
 | Teleoperation stops suddenly | Safety protection triggered | Clear the cause, then long press B and then A |
 | One arm suddenly stops while the other works normally | That controller lost tracking, disconnected, jumped, or is too far from your body | Move the controller back into tracking range and close to your body, then double-press and hold the grip trigger |
@@ -237,7 +240,7 @@ flowchart LR
 | Pause an arm | Release the **grip trigger** |
 | Grasp / release | Press / release the **index trigger** |
 | Drive the waist or chassis with my body | Hold both **grip triggers**, then move your body |
-| Switch body drive between chassis and waist | Long press **Y** (omni chassis models only) |
+| Switch body drive between chassis and waist | Long press **Y** |
 | Move the chassis | **Left joystick** to move, **right joystick left/right** to turn |
 | Fine-tune the waist | **Right joystick up/down**; long press **X** to switch between lift and pitch |
 | Pause (prevent accidental input) | Short press **B** |

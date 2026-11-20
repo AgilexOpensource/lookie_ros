@@ -7,6 +7,7 @@ substates (Held / CatchUp / Active); all geometry lives in the pure modules.
 import json
 import math
 import signal
+from dataclasses import replace
 from functools import partial
 
 import numpy as np
@@ -28,7 +29,7 @@ from .frames import heading_frame, invert, matrix_to_pose, pitch_of, planar, pos
 from .home import HomeTracker, parse_request_id
 from .mapping import ArmMap, Chassis, ChassisConfig, Settle, Waist, WaistConfig, apply_deadzone, ee_target, \
     to_base
-from .profile import parse_discover
+from .profile import TORSO_ROLES, parse_discover, parse_torso_joints
 from .safety import XrMonitor, kstone_health, stale_groups
 from .transforms import matrix_to_quat, quat_to_matrix, yaw_of
 from .workspace import SIDES, Workspace, project
@@ -48,8 +49,14 @@ LATCHED = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
 
 PARAMS = {
     "xr_namespace": "/xr_media", "kstone_namespace": "kstone", "rate_hz": 50.0,
-    # axes the headset may drive; chassis is dropped unless discover reports a holonomic base
+    # axes the headset may drive; chassis is dropped unless discover reports a chassis pose target
+    # (a differential base follows only the operator's forward walk and turn)
     "body_axes": ["chassis", "waist_x", "waist_z", "waist_pitch", "waist_yaw"],
+    # distance (m) from the robot's last waist pitch axis to chest_link (URDF), the operator's hip taken the
+    # same distance below the headset: the arm frame origin and the chassis point then stay at the hip-fixed
+    # point of A's lean, so leaning swings the hands about the hip and does not walk the base; in chassis
+    # mode the torso also pitches about that axis, its x held (waist_x only). 0 = the headset / chest itself
+    "lean_pivot_m": 0.0,
     "long_press_s": 1.0, "double_tap_s": 0.4, "grip_on": 0.6, "grip_off": 0.4,
     "haptic_long_press": [1.0, 100.0, 2.0, 250.0], "haptic_grip_engage": [1.0, 100.0],
     "deadzone": 0.15, "max_vx": 0.5, "max_vy": 0.5, "max_wz": 1.0,
@@ -57,7 +64,10 @@ PARAMS = {
     "headset_forward_axis": [1.0, 0.0, 0.0], "mount_max_deg": 35.0, "yaw_warn_deg": 15.0,
     "calib_x": [0.15, 0.70], "calib_z": [-0.6, 0.3], "min_cross": 0.10, "max_side": 0.20,
     "spacing_tol": 0.10,
-    "R_body_to_torso": [0.0, 0.0, 0.0], "controller_tcp": [0.0] * 6,
+    "R_body_to_torso": [0.0, 0.0, 0.0],
+    # xyz + rpy of the mapped point, given for the RIGHT controller (+x pointing, +y inward, +z up); the left
+    # controller uses its mirror image (y, roll, yaw negated)
+    "controller_tcp": [0.0] * 6,
     "k_x": 1.0, "k_z": 1.0, "k_pitch": 1.0, "waist_z_range": [-0.8, 0.15],
     "waist_x_rate": 0.2,
     "waist_pitch_limits_deg": [-30.0, 90.0], "waist_yaw_limits_deg": [-89.0, 89.0], "waist_z_rate": 0.2, "waist_pitch_rate": 0.8, "waist_yaw_rate": 1.0,
@@ -84,6 +94,10 @@ TYPED_PARAMS = {
     "ee_open": Parameter.Type.DOUBLE_ARRAY, "ee_close": Parameter.Type.DOUBLE_ARRAY,
     "ee_lower": Parameter.Type.DOUBLE_ARRAY, "ee_upper": Parameter.Type.DOUBLE_ARRAY,
     "ee_joints_left": Parameter.Type.STRING_ARRAY, "ee_joints_right": Parameter.Type.STRING_ARRAY,
+    # role:joint entries (roles x, z, pitch, yaw; role:-joint for a joint turning against x forward, z up,
+    # pitch > 0 forward, yaw > 0 left) naming joint_target joints: the waist is then driven in joint space
+    # instead of through the torso_pose frame target, and waist axes without a joint are not driven.
+    "torso_joints": Parameter.Type.STRING_ARRAY,
 }
 
 
@@ -152,7 +166,7 @@ class TeleopNode(Node):
             pitch_limits=tuple(math.radians(v) for v in p["waist_pitch_limits_deg"]),
             yaw_limits=tuple(math.radians(v) for v in p["waist_yaw_limits_deg"]),
             x_rate=p["waist_x_rate"], z_rate=p["waist_z_rate"], pitch_rate=p["waist_pitch_rate"],
-            yaw_rate=p["waist_yaw_rate"])
+            yaw_rate=p["waist_yaw_rate"], pitch_pivot=p["lean_pivot_m"])
         self.chassis_cfg = ChassisConfig(
             scale=p["chassis_scale"], deadband_pos=p["chassis_deadband_pos"],
             deadband_ang=math.radians(p["chassis_deadband_deg"]),
@@ -160,7 +174,8 @@ class TeleopNode(Node):
             w_max=p["chassis_w_max"])
         self.ws = None   # set at A
         self.R = rpy_to_matrix(*p["R_body_to_torso"])
-        self.tcp = tcp_transform(p["controller_tcp"])
+        self.tcp = {s: tcp_transform(p["controller_tcp"], s) for s in SIDES}
+        self.lean0 = 0.0                              # body lean at A
         self.xr_monitor = XrMonitor(p["xr_timeout_s"], p["jump_pos"], math.radians(p["jump_ang_deg"]),
                                     p["max_reach"], p["jump_speed"], math.radians(p["jump_rate_deg"]))
 
@@ -191,6 +206,8 @@ class TeleopNode(Node):
         self.kstate = None
         self.kstate_t = None
         self.fb = {}                                  # module id -> 4x4 feedback
+        self.torso = None                             # joint-driven waist: dict(joints, modules); None = torso_pose
+        self.torso_q = None                           # role -> joint position in the waist convention
         self.ee = {}                                # side -> dict(module, names, open, close, lower, upper)
         self._ee_last = {s: (None, -1.0) for s in SIDES}
         self._last_tick = None
@@ -287,13 +304,15 @@ class TeleopNode(Node):
             self.pose_pubs[mid] = (self.create_publisher(PoseStamped, port.topic, 10), port.ros_frame)
         if profile.chassis_velocity is not None:
             self.cmd_vel_pub = self.create_publisher(Twist, profile.chassis_velocity.topic, 10)
-        if profile.has("chassis") and profile.chassis_pose_topic:
+        self.chassis = Chassis(replace(self.chassis_cfg, lateral=profile.holonomic))
+        if profile.has("chassis"):
             self.chassis_pose_pub = self.create_publisher(PoseStamped, profile.chassis_pose_topic, 10)
         ks = self.p["kstone_namespace"].rstrip("/")
         for mid in self.p["home_modules"]:
             self.home_clients[mid] = self.create_client(Trigger, f"{ks}/{mid}/home")
         self.cancel_client = self.create_client(Trigger, f"{ks}/home_cancel")
         self._setup_end_effectors(profile)
+        self._setup_torso_joints(profile)
         if not profile.has("chassis"):
             self.body_mode = "waist"
         self.reason = "long press B to home"
@@ -323,6 +342,75 @@ class TeleopNode(Node):
         if topic:
             self.joint_pub = self.create_publisher(JointState, topic, 10)
 
+    def _setup_torso_joints(self, profile):
+        entries = self._typed("torso_joints")
+        if not entries:
+            return
+        joints = parse_torso_joints(entries)
+        found = {}
+        for mid, port in profile.vector_ports.items():
+            for i, label in enumerate(port.labels):
+                found.setdefault(label, (mid, port, i))
+        missing = [n for _, n, _ in joints if n not in found]
+        if missing:
+            self.get_logger().error(f"torso_joints names no joint_target joint {missing}")
+            raise ValueError("bad torso_joints")
+        lim = {}
+        for role, name, sign in joints:
+            _, port, i = found[name]
+            lo, hi = sorted((sign * float(port.lower[i]), sign * float(port.upper[i])))
+            lim[role] = (lo, hi)
+        cfg = self.waist_cfg
+        both = lambda a, b: (max(a[0], b[0]), min(a[1], b[1]))
+        self.waist_cfg = replace(cfg, x_limits=lim.get("x", cfg.x_limits), z_limits=lim.get("z", cfg.z_limits),
+                                 pitch_limits=both(cfg.pitch_limits, lim.get("pitch", cfg.pitch_limits)),
+                                 yaw_limits=both(cfg.yaw_limits, lim.get("yaw", cfg.yaw_limits)))
+        profile.axes = profile.axes - {f"waist_{r}" for r in TORSO_ROLES if r not in lim}
+        self.torso = dict(joints=joints, modules=list(dict.fromkeys(found[n][0] for _, n, _ in joints)))
+        ks = self.p["kstone_namespace"].rstrip("/")
+        self.create_subscription(JointState, f"{ks}/feedback/joint_states", self._on_joint_feedback, 10)
+        if self.joint_pub is None:
+            self.joint_pub = self.create_publisher(JointState, found[joints[0][1]][1].topic, 10)
+        self.get_logger().info(f"waist driven by joints {[f'{r}:{n}' for r, n, _ in joints]} "
+                               f"({', '.join(self.torso['modules'])})")
+
+    def _on_joint_feedback(self, msg: JointState):
+        pos = dict(zip(msg.name, msg.position))
+        q = {r: pos.get(n) for r, n, _ in self.torso["joints"]}
+        if all(v is not None and math.isfinite(v) for v in q.values()):
+            self.torso_q = {r: sign * q[r] for r, _, sign in self.torso["joints"]}
+
+    def _torso_modules(self):
+        return self.torso["modules"] if self.torso else ["torso_pose"]
+
+    def _torso_feedback(self):
+        """(position, pitch, yaw) of the torso in the arm reference frame; joint mode: the mapped joints
+        ((x, 0, z), pitch, yaw), 0 for roles without a joint."""
+        if self.torso is None:
+            t = self.fb.get("torso_pose")
+            return None if t is None else (t[:3, 3], pitch_of(t[:3, :3]), yaw_of(t[:3, :3]))
+        q = self.torso_q
+        if q is None:
+            return None
+        return np.array([q.get("x", 0.0), 0.0, q.get("z", 0.0)]), q.get("pitch", 0.0), q.get("yaw", 0.0)
+
+    def _missing_feedback(self):
+        missing = [m for m in ARM_MODULES.values() if m not in self.fb]
+        if self._torso_feedback() is None:
+            missing.insert(0, "torso_pose" if self.torso is None else "torso joints")
+        return missing
+
+    def _publish_torso(self):
+        if self.torso is None:
+            self._publish_pose("torso_pose", self.waist.position, matrix_to_quat(self.waist.rotation))
+            return
+        msg = self._stamped(JointState, "")
+        w = self.waist
+        value = dict(x=w.position[0], z=w.position[2], pitch=w.target[1], yaw=w.target[2])
+        msg.name = [n for _, n, _ in self.torso["joints"]]
+        msg.position = [float(sign * value[r]) for r, _, sign in self.torso["joints"]]
+        self.joint_pub.publish(msg)
+
     # ------------------------------------------------------------------ inputs
     def _joy_msg(self, side, now):
         j = self.joy[side]
@@ -342,7 +430,7 @@ class TeleopNode(Node):
         return self.xr_monitor.stale({k: (v[2] if v else None) for k, v in self.xr.items()}, now)
 
     def _controller(self, side):
-        return self.xr[side][0] @ self.tcp
+        return self.xr[side][0] @ self.tcp[side]
 
     def _update_ctrl_speed(self, side):
         pose, stamp, _ = self.xr[side]
@@ -357,7 +445,7 @@ class TeleopNode(Node):
             self._speed_last[side] = (pose, stamp)
 
     def _health_modules(self):
-        return ["torso_pose", *ARM_MODULES.values(), *[h["module"] for h in self.ee.values()]]
+        return [*self._torso_modules(), *ARM_MODULES.values(), *[h["module"] for h in self.ee.values()]]
 
     def _kstone_reason(self, now, scoped=False, check_held=True):
         """Reason to disable. ``scoped``: arm, torso and chassis groups are left to ``_group_issues``.
@@ -524,12 +612,12 @@ class TeleopNode(Node):
     # ------------------------------------------------------------------ enable / disable
     def _calibrate(self, now):
         reason = self._xr_stale(now) or self._kstone_reason(now)
-        missing = [m for m in ("torso_pose", *ARM_MODULES.values()) if m not in self.fb]
+        missing = self._missing_feedback()
         if reason is None and missing:
             reason = f"missing feedback {missing}"
         if reason is None:
-            torso = self.fb["torso_pose"]
-            ft0 = heading_frame(torso[:3, 3], yaw_of(torso[:3, :3]))
+            torso = self._torso_feedback()
+            ft0 = heading_frame(torso[0], torso[2])
             ft0_inv = invert(ft0)
             ee = {s: ft0_inv @ self.fb[ARM_MODULES[s]] for s in SIDES}
             ctrls = {s: self._controller(s) for s in SIDES}
@@ -541,13 +629,13 @@ class TeleopNode(Node):
         self.mount = ref.mount
         self.arm_map = ArmMap(ref.M0, ref.m0, self.R, ref.C)
         self.ws = Workspace.from_home(ee["left"][:3, 3], ee["right"][:3, 3])   # A is only accepted right after Home
-        self.waist = Waist(torso[:3, 3], pitch_of(torso[:3, :3]), yaw_of(torso[:3, :3]), self.waist_cfg,
-                           self.profile.axes)
+        self.waist = Waist(*torso, self.waist_cfg, self.profile.axes)
         self.waist.set_body_reference(ref.zh0, ref.theta0)
         self.waist.record_yaw_reference(ref.yaw_h0)
         headset = self.xr["headset"][0]
         self._waist_fh_inv = invert(self.mount.heading(headset))
-        self._record_chassis(self.mount.heading(headset))
+        self.lean0 = ref.theta0
+        self._record_chassis(self._lean_frame(self.mount.heading(headset), self.mount.lean(headset)))
         self.warnings = list(ref.warnings)
         self.xr_monitor.reset()
         for s in SIDES:
@@ -575,7 +663,7 @@ class TeleopNode(Node):
         self.waist.record_yaw_reference(self.mount.yaw(headset))
         self.waist.record_x_reference()
         self._waist_fh_inv = invert(self.mount.heading(headset))
-        self._record_chassis(self.mount.heading(headset))
+        self._record_chassis(self._lean_frame(self.mount.heading(headset), self.mount.lean(headset)))
 
     def _halt(self):
         """Stop publishing arm/torso/chassis commands; one zero Twist; end effectors simply stop being sent."""
@@ -619,7 +707,7 @@ class TeleopNode(Node):
         # Every check runs before any mapping or publishing, so a bad frame never reaches kstone.
         issues = self._xr_issues(left, right, now)
         reason = issues.get("headset") or self._kstone_reason(now, scoped=True)
-        missing = [m for m in ("torso_pose", *ARM_MODULES.values()) if m not in self.fb]
+        missing = self._missing_feedback()
         if reason is None and missing:
             reason = f"missing feedback {missing}"
         if reason is not None:
@@ -649,8 +737,7 @@ class TeleopNode(Node):
             if s in groups:
                 self.arms[s] = Arm()          # _arms() re-seeds it from the feedback pose
         if "torso" in groups:
-            torso = self.fb["torso_pose"]
-            self.waist.hold_at(torso[:3, 3], pitch_of(torso[:3, :3]), yaw_of(torso[:3, :3]))
+            self.waist.hold_at(*self._torso_feedback())
 
         headset = self.xr["headset"][0]
         fh = self.mount.heading(headset)
@@ -681,14 +768,17 @@ class TeleopNode(Node):
         chassis_mode = self.body_mode == "chassis" and self.profile.has("chassis")
         b = self.mount.body(headset)
         forward = (self._waist_fh_inv @ b)[0, 3]   # body displacement along the heading at the reference
-        body = (b[2, 3], self.mount.lean(headset), self.mount.yaw(headset), forward)
+        lean = self.mount.lean(headset)
+        fa = self._lean_frame(fh, lean)
+        # height: lean-compensated, so leaning alone does not move the lift
+        body = (fa[2, 3], lean, self.mount.yaw(headset), forward)
         # chassis mode: the headset's planar motion drives the chassis, its height and lean still the waist
         self.waist.update(dt, body if dual else None, CHASSIS_MODE_WAIST_AXES if chassis_mode else None)
-
-        if not self._arms(now, dt, fh):
+        if not self._arms(now, dt, fa):
             return
-        self._publish_pose("torso_pose", self.waist.position, matrix_to_quat(self.waist.rotation))
-        self._chassis(vx, vy, wz, fh, dt, now, groups.get("chassis"))
+        self._publish_torso()
+        # the hip point drives the chassis, so leaning to reach does not walk the base
+        self._chassis(vx, vy, wz, fa, dt, now, groups.get("chassis"))
 
     def _log_group_holds(self, groups):
         for part in ("torso", "chassis"):
@@ -738,12 +828,23 @@ class TeleopNode(Node):
         self.arms[side] = Arm(held.pos, held.quat)
         self.grip_tap[side].reset()   # the grip still held does not count; it must be released and double-tapped
 
+    def _lean_frame(self, fh, lean):
+        """F_h moved from the headset to the point that stays fixed relative to the hip when only the lean
+        changes: ``chest - L (u(lean) - u(lean0))``, ``u = (sin, 0, cos)`` in the heading frame (§8.1)."""
+        pivot = self.p["lean_pivot_m"]
+        if pivot <= 0.0:
+            return fh
+        d = pivot * np.array([math.sin(lean) - math.sin(self.lean0), 0.0, math.cos(lean) - math.cos(self.lean0)])
+        out = fh.copy()
+        out[:3, 3] = fh[:3, 3] - fh[:3, :3] @ d
+        return out
+
     def _engage(self, side, now):
         self.catch_aborts.pop(side, None)
         held = self.arms[side]
         arm = Arm(held.pos, held.quat)
         if arm.pos is None:
-            ee = invert(self.waist.frame()) @ self.fb[ARM_MODULES[side]]
+            ee = invert(self.waist.arm_frame()) @ self.fb[ARM_MODULES[side]]
             arm.pos, arm.quat = ee[:3, 3].copy(), matrix_to_quat(ee[:3, :3])
         p = self.p
         arm.catch = CatchUp(p["v_catch"], p["w_catch"], p["catch_pos_tol"], math.radians(p["catch_ori_tol_deg"]),
@@ -760,8 +861,9 @@ class TeleopNode(Node):
 
         Stopped arms hold their pose in F_t, so waist Z moves them with the torso while waist
         pitch (not part of F_t) leaves every arm target unchanged in the base frame.
+        ``fh``: the mapping heading frame.
         """
-        ft = self.waist.frame()
+        ft = self.waist.arm_frame()
         ft_inv = invert(ft)
         goals = {}
         for s in SIDES:
@@ -771,7 +873,8 @@ class TeleopNode(Node):
                     ee = ft_inv @ self.fb[ARM_MODULES[s]]
                     arm.pos, arm.quat = ee[:3, 3].copy(), matrix_to_quat(ee[:3, :3])
             else:
-                goals[s] = self.arm_map.target(s, fh, self._controller(s))
+                goal, rot = self.arm_map.target(s, fh, self._controller(s))
+                goals[s] = (goal + np.array([0.0, 0.0, self.waist.arm_dz]), rot)
         if not goals:
             self.clamped = set()
             self._publish_arms(ft)
@@ -831,8 +934,8 @@ class TeleopNode(Node):
                 return
             self.stick_was_active = False
             self._record_chassis(fh)
-        if (self.dual_active and self.body_mode == "chassis" and self.chassis_pose_pub is not None
-                and self.chassis.ref is not None):
+        if (self.dual_active and self.body_mode == "chassis" and self.chassis.ref is not None
+                and self.chassis_pose_pub is not None):
             fb = self.fb.get("chassis")
             x, y, yaw = self.chassis.update(fh, dt, planar(fb) if fb is not None else None)
             if self.chassis.fault:

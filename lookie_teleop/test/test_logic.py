@@ -10,12 +10,12 @@ import pytest
 from lookie_teleop import calibration, safety
 from lookie_teleop.buttons import DoubleTapHold, Hysteresis, LongPress, ShortLongPress
 from lookie_teleop.catchup import CatchUp, step_toward
-from lookie_teleop.frames import Mount, heading_frame, invert, rpy_to_matrix, wrap_angle
+from lookie_teleop.frames import Mount, heading_frame, invert, rpy_to_matrix, tcp_transform, wrap_angle
 from lookie_teleop.home import HomeTracker, parse_request_id
 from lookie_teleop.mapping import (ArmMap, Chassis, ChassisConfig, Settle, Waist, WaistConfig,
                                        YAW_LEAD_MAX, _soft_deadband, apply_deadzone, ee_target,
                                        to_base)
-from lookie_teleop.profile import ALL_AXES, parse_discover
+from lookie_teleop.profile import ALL_AXES, parse_discover, parse_torso_joints
 from lookie_teleop.workspace import Workspace, project
 
 FIXTURE = Path(__file__).parent / "fixtures" / "discover_trio.json"
@@ -46,14 +46,50 @@ def test_profile_body_axes_restrict_headset_axes():
     assert not (p.has("waist_z") or p.has("waist_yaw") or p.has("chassis"))
 
 
-def test_profile_non_holonomic_drops_chassis_axis():
+def test_profile_differential_keeps_the_chassis_axis_with_a_pose_target():
     doc = json.loads(FIXTURE.read_text())
     for m in doc["modules"]:
         if "chassis_kinematics" in m:
             m["chassis_kinematics"] = "differential"
     p = parse_discover(doc)
     assert p.kinematics == "differential" and not p.holonomic
-    assert not p.has("chassis") and p.has("waist_z")
+    assert p.has("chassis") and p.has("waist_z")
+    for m in doc["modules"]:
+        m["ports"] = [q for q in m.get("ports", []) if q["name"] != "pose_target"]
+    p = parse_discover(doc)
+    assert not p.has("chassis") and not p.chassis_pose_topic
+
+
+def test_chassis_without_lateral_follows_only_the_forward_walk():
+    ch = Chassis(ChassisConfig(deadband_pos=0.0, deadband_ang=0.0, vx_max=10, vy_max=10, w_max=10, lateral=False))
+    ch.record([1.0, 2.0, math.pi / 2], heading_frame([0.0, 0.0, 1.4], 0.0))
+    # 0.5 m forward and 0.3 m to the left of the operator: the base (facing +y) moves 0.5 m along +y only
+    target = ch.update(heading_frame([0.5, 0.3, 1.4], 0.0), 1.0)
+    np.testing.assert_allclose(target, [1.0, 2.5, math.pi / 2], atol=1e-9)
+    # turning in place does not move it; the next step forward goes along the new heading
+    ch.update(heading_frame([0.5, 0.3, 1.4], 0.2), 1.0)
+    target = ch.update(heading_frame([0.5 + 0.4 * math.cos(0.2), 0.3 + 0.4 * math.sin(0.2), 1.4], 0.2), 1.0)
+    np.testing.assert_allclose(target[:2], [1.0 - 0.4 * math.sin(0.2), 2.5 + 0.4 * math.cos(0.2)], atol=1e-9)
+    assert target[2] == pytest.approx(math.pi / 2 + 0.2)
+
+
+def test_chassis_without_lateral_holds_the_forward_walk_over_the_speed_limit():
+    ch = Chassis(ChassisConfig(deadband_pos=0.0, deadband_ang=0.0, vx_max=0.5, w_max=10, lateral=False))
+    ch.record([0.0, 0.0, 0.0], heading_frame([0.0, 0.0, 1.4], 0.0))
+    assert ch.update(heading_frame([1.0, 0.0, 1.4], 0.0), 0.1)[0] == pytest.approx(0.05)   # vx_max * dt
+    for _ in range(19):
+        ch.update(heading_frame([1.0, 0.0, 1.4], 0.0), 0.1)
+    assert ch.target[0] == pytest.approx(1.0)                  # the rest catches up, nothing is lost
+
+
+def test_chassis_without_lateral_drops_what_lies_beside_the_base():
+    ch = Chassis(ChassisConfig(deadband_pos=0.0, deadband_ang=0.0, vx_max=10, w_max=10, lateral=False))
+    ch.record([0.0, 0.0, 0.0], heading_frame([0.0, 0.0, 1.4], 0.0))
+    # the operator walks 1 m ahead while the base, lagging in yaw, still faces 30° off
+    target = ch.update(heading_frame([1.0, 0.0, 1.4], 0.0), 1.0, feedback=[0.0, 0.0, math.radians(30.0)])
+    c = math.cos(math.radians(30.0))
+    np.testing.assert_allclose(target[:2], [c * c, c * 0.5], atol=1e-9)
+    assert ch.fault is None
 
 
 def test_profile_unknown_body_axis_raises():
@@ -84,12 +120,13 @@ def test_calibration_accepts_nominal_pose():
     assert ref.zh0 == pytest.approx(1.4) and ref.warnings == []
 
 
-def test_calibration_anchors_orientation_at_a():
-    # Controllers held with arbitrary grips, arms at their own orientations: at A the mapped
-    # orientation equals each end effector's, and later controller rotations apply on top.
+def test_calibration_maps_orientation_absolutely_to_home():
+    # A level controller TCP pointing along the body heading maps to the Home orientation whatever the
+    # grip held at A; any other controller orientation maps to that rotation of the Home orientation.
     headset, ctrl, ee = calib_inputs()
-    ctrl["left"] = ctrl["left"] @ _rot4(rpy_to_matrix(0.4, -1.2, 2.0))
-    ctrl["right"] = ctrl["right"] @ _rot4(rpy_to_matrix(-1.0, 0.3, -0.7))
+    held = {"left": rpy_to_matrix(0.4, -1.2, 2.0), "right": rpy_to_matrix(-1.0, 0.3, -0.7)}
+    for s in ("left", "right"):
+        ctrl[s] = ctrl[s] @ _rot4(held[s])
     ee["left"] = ee["left"] @ _rot4(rpy_to_matrix(0.0, 1.5, 0.2))
     ee["right"] = ee["right"] @ _rot4(rpy_to_matrix(0.9, 0.0, -1.1))
     R = rpy_to_matrix(0.0, 0.0, 0.1)
@@ -99,12 +136,17 @@ def test_calibration_anchors_orientation_at_a():
     amap = ArmMap(ref.M0, ref.m0, R, ref.C)
     for s in ("left", "right"):
         _, rot = amap.target(s, fh, ctrl[s])
-        np.testing.assert_allclose(rot, ee[s][:3, :3], atol=1e-9)
-        turn = rpy_to_matrix(0.0, 0.0, 0.3)      # a yaw of the grip in the body heading frame
-        moved = fh @ _rot4(turn) @ invert(fh) @ ctrl[s]
-        moved[:3, 3] = ctrl[s][:3, 3]
-        _, rot2 = amap.target(s, fh, moved)
-        np.testing.assert_allclose(rot2, R @ turn @ R.T @ ee[s][:3, :3], atol=1e-9)
+        np.testing.assert_allclose(rot, R @ held[s] @ R.T @ ee[s][:3, :3], atol=1e-9)
+        level = ctrl[s].copy()
+        level[:3, :3] = fh[:3, :3]
+        _, rot0 = amap.target(s, fh, level)
+        np.testing.assert_allclose(rot0, ee[s][:3, :3], atol=1e-9)
+
+
+def test_controller_tcp_offsets_the_point_before_rotating():
+    t = tcp_transform([0.06, 0.0, 0.0, 0.0, math.radians(30.0), 0.0], "left")
+    np.testing.assert_allclose(t[:3, 3], [0.06, 0.0, 0.0])
+    np.testing.assert_allclose(t[:3, :3], rpy_to_matrix(0.0, math.radians(30.0), 0.0), atol=1e-12)
 
 
 def test_calibration_spacing_mismatch_only_warns_and_keeps_hand_spacing():
@@ -498,7 +540,7 @@ def test_workspace_clamps_after_engage_until_the_target_is_first_inside():
     other = node.Arm(np.array([0.3, -0.2, 0.0]), Q0.copy())
     published = []
     fake = SimpleNamespace(
-        waist=SimpleNamespace(frame=lambda: np.eye(4)),
+        waist=SimpleNamespace(arm_frame=lambda: np.eye(4), arm_dz=0.0),
         arms={"left": arm, "right": other}, fb={},
         arm_map=SimpleNamespace(target=lambda *a: (goal.copy(), np.eye(3))),
         _controller=lambda s: None, p={}, ctrl_speed={"left": (0.0, 0.0)},
@@ -537,7 +579,7 @@ def test_failed_catch_up_stops_only_that_arm_until_a_new_double_tap():
     assert tap.engaged
     published = []
     fake = SimpleNamespace(
-        waist=SimpleNamespace(frame=lambda: np.eye(4)),
+        waist=SimpleNamespace(arm_frame=lambda: np.eye(4), arm_dz=0.0),
         arms={"left": arm, "right": other}, fb={},
         arm_map=SimpleNamespace(target=lambda *a: (np.array([0.3, 0.4, 0.0]), np.eye(3))),
         _controller=lambda s: None, p={}, ctrl_speed={"left": (0.0, 0.0)}, ws=WS, catch_aborts={},
@@ -724,6 +766,82 @@ def test_accepted_long_press_pulses_that_controller():
     assert sent == [("left", [0.5, 80.0])] and fake.stick_axis == "pitch"
 
 
+def test_short_b_cancels_home_through_home_cancel():
+    from types import SimpleNamespace
+    node = pytest.importorskip("lookie_teleop.node")
+    calls, reasons = [], []
+
+    class Future:
+        def __init__(self, ok): self.ok = ok
+        def result(self): return SimpleNamespace(success=self.ok, message="queue full")
+        def add_done_callback(self, cb): cb(self)
+
+    log = SimpleNamespace(error=lambda m: reasons.append(m))
+    fake = SimpleNamespace(p={"home_modules": ["torso_pitch_joint", "left_arm_pose"], "haptic_long_press": [0.0, 0.0]},
+                           cancel_client=SimpleNamespace(service_is_ready=lambda: True,
+                                                         call_async=lambda req: calls.append(req) or Future(False)),
+                           home=object(), state=node.HOMING, get_logger=lambda: log,
+                           _disable=lambda r: reasons.append(r), lp_b=ShortLongPress(1.0), lp_a=LongPress(1.0),
+                           lp_y=LongPress(1.0), lp_x=LongPress(1.0), _button=lambda msg, i: msg == i)
+    fake._on_home_cancel = lambda fut: node.TeleopNode._on_home_cancel(fake, fut)
+    fake._abort_home = lambda: node.TeleopNode._abort_home(fake)
+    node.TeleopNode._buttons(fake, None, node.BTN_YB, 0.0)
+    node.TeleopNode._buttons(fake, None, None, 0.3)          # short press B released
+    assert len(calls) == 1                                   # one global cancel
+    assert fake.home is None
+    assert reasons == ["Home cancel failed: queue full", "Home interrupted by user (short press B)"]
+
+
+def _engage_fake(node):
+    from types import SimpleNamespace
+    amap = ArmMap(np.array([0.35, 0.0, -0.25]), np.array([0.4, 0.0, 0.0]), np.eye(3), EYE_C)
+    ctrl = {"left": pose((0.35, 0.2, 1.15))}
+    fake = SimpleNamespace(
+        arms={s: node.Arm() for s in node.SIDES}, catch_aborts={}, arm_map=amap,
+        p=dict(v_catch=0.1, w_catch=1.0, catch_pos_tol=0.01, catch_ori_tol_deg=2.0, catch_timeout_s=5.0,
+               catch_fast_v=1.0, catch_fast_w=3.0),
+        _controller=lambda s: ctrl[s], waist=SimpleNamespace(arm_frame=lambda: np.eye(4), arm_dz=0.0),
+        fh0=heading_frame([0.0, 0.0, 1.4], 0.0), ws=None, clamped=set(),
+        ctrl_speed={s: (0.0, 0.0) for s in node.SIDES}, fb={"right_arm_pose": pose((0.4, -0.2, 0.0))},
+        _publish_arms=lambda ft: None)
+    held = np.array([0.4, 0.2, 0.0])
+    fake.arms["left"] = node.Arm(held.copy(), np.array([1.0, 0.0, 0.0, 0.0]))
+    return fake, ctrl, held
+
+
+def test_arms_keep_their_place_when_the_operator_turns_as_a_whole():
+    """Controllers fixed relative to the headset: turning the whole body leaves the arm target in place."""
+    node = pytest.importorskip("lookie_teleop.node")
+    fake, ctrl, held = _engage_fake(node)
+    node.TeleopNode._engage(fake, "left", 0.0)
+    hand = pose((0.35, 0.2, -0.25))
+    want = fake.arm_map.target("left", fake.fh0, fake.fh0 @ hand)[0]
+    fh = heading_frame([0.1, -0.2, 1.4], 1.2)
+    np.testing.assert_allclose(fake.arm_map.target("left", fh, fh @ hand)[0], want, atol=1e-9)
+
+
+def test_arm_frame_ignores_walking_and_swings_about_the_hip_when_leaning():
+    from types import SimpleNamespace
+    node = pytest.importorskip("lookie_teleop.node")
+    fake, ctrl, held = _engage_fake(node)
+    node.TeleopNode._engage(fake, "left", 0.0)
+    hand = pose((0.35, 0.2, -0.25))                          # controller fixed relative to the chest
+    want = fake.arm_map.target("left", fake.fh0, fake.fh0 @ hand)[0]
+    # walking / side-stepping with the hands still relative to the body: no arm motion
+    fh = heading_frame([0.4, -0.3, 1.4], 0.0)
+    np.testing.assert_allclose(fake.arm_map.target("left", fh, fh @ hand)[0],
+                               want, atol=1e-9)
+    # leaning 0.3 rad about the hip (L = 0.32): the hands swing with the chest about the hip
+    lf = SimpleNamespace(p={"lean_pivot_m": 0.32}, lean0=0.0)
+    lean = 0.3
+    chest = heading_frame([0.32 * math.sin(lean), 0.0, 1.4 - 0.32 * (1 - math.cos(lean))], 0.0)
+    frame = node.TeleopNode._lean_frame(lf, chest, lean)
+    got = fake.arm_map.target("left", frame, chest @ hand)[0]
+    np.testing.assert_allclose(got - want, [0.32 * math.sin(lean), 0.0, 0.32 * (math.cos(lean) - 1)], atol=1e-9)
+    lf.p["lean_pivot_m"] = 0.0
+    assert node.TeleopNode._lean_frame(lf, chest, lean) is chest
+
+
 def test_sticks_drive_the_chassis_while_homing():
     from types import SimpleNamespace
     node = pytest.importorskip("lookie_teleop.node")
@@ -833,27 +951,149 @@ def test_non_finite_or_degenerate_input_is_rejected():
     assert not _valid_joy(Joy(axes=[0.0, float("inf")]))
 
 
-def test_short_b_cancels_home_through_home_cancel():
+def test_waist_joint_mode_lift_bounded_by_joint_range():
+    cfg = WaistConfig(z_rate=10, pitch_rate=10, z_range=(-0.4, 0.4), z_limits=(0.0, 0.4),
+                      pitch_limits=(-math.pi / 4, math.pi / 2))
+    w = Waist([0.0, 0.0, 0.2], 0.0, 0.0, cfg, frozenset({"waist_pitch"}))
+    w.set_body_reference(1.4, 0.0)
+    w.add_offset("z", 1.0)
+    w.update(1.0, (1.0, -1.0, 0.0))          # headset height ignored, lean back past -45°
+    assert w.position[2] == pytest.approx(0.4) and w.target[1] == pytest.approx(-math.pi / 4)
+    w.add_offset("z", -2.0)
+    w.update(1.0, None)
+    assert w.position[2] == pytest.approx(0.0)
+
+
+def test_waist_joint_mode_headset_below_the_lift_end_moves_the_arms():
+    cfg = WaistConfig(z_rate=10, pitch_rate=10, z_range=(-0.4, 0.4), z_limits=(0.0, 0.395))
+    w = Waist([0.0, 0.0, 0.2], 0.0, 0.0, cfg, frozenset({"waist_z", "waist_pitch"}))
+    w.set_body_reference(1.5, 0.0)
+    w.update(1.0, (1.4, 0.0, 0.0))
+    assert w.position[2] == pytest.approx(0.1) and w.arm_dz == 0.0     # the lift follows the headset
+    w.update(1.0, (1.2, 0.0, 0.0))                   # 0.1 below the lift's end: carried by the arms
+    assert w.position[2] == pytest.approx(0.0) and w.arm_dz == pytest.approx(-0.1)
+    w.update(1.0, (0.9, 0.0, 0.0))                   # the arms stop at z_range (0.2 below the lift)
+    assert w.arm_dz == pytest.approx(-0.2)
+    w.update(1.0, (1.25, 0.0, 0.0))                  # rising takes it back from the arms first
+    assert w.position[2] == pytest.approx(0.0) and w.arm_dz == pytest.approx(-0.05)
+    w.update(1.0, (1.35, 0.0, 0.0))
+    assert w.position[2] == pytest.approx(0.05) and w.arm_dz == 0.0
+    w.update(1.0, (2.0, 0.0, 0.0))                   # the upper end is not compensated
+    assert w.position[2] == pytest.approx(0.395) and w.arm_dz == 0.0
+    # the stick only moves the lift; the headset still goes on into the arms from there
+    w.update(1.0, (1.5, 0.0, 0.0))
+    w.add_offset("z", -1.0)
+    w.update(1.0, (1.5, 0.0, 0.0))
+    assert w.position[2] == pytest.approx(0.0) and w.arm_dz == 0.0
+    w.update(1.0, (1.4, 0.0, 0.0))
+    assert w.position[2] == pytest.approx(0.0) and w.arm_dz == pytest.approx(-0.1)
+    # rate-limited like the lift target
+    slow = Waist([0.0, 0.0, 0.0], 0.0, 0.0, WaistConfig(z_rate=0.2, z_range=(-0.4, 0.4), z_limits=(0.0, 0.395)),
+                 frozenset({"waist_z"}))
+    slow.set_body_reference(1.5, 0.0)
+    slow.update(0.1, (1.0, 0.0, 0.0))
+    assert slow.arm_dz == pytest.approx(-0.02)
+    # a frame-driven waist (no joint range) never moves the arms
+    t = Waist([0.0, 0.0, 0.2], 0.0, 0.0, WaistConfig(z_rate=10, z_range=(-0.4, 0.4)), frozenset({"waist_z"}))
+    t.set_body_reference(1.5, 0.0)
+    t.update(1.0, (0.5, 0.0, 0.0))
+    assert t.position[2] == pytest.approx(-0.2) and t.arm_dz == 0.0
+
+
+def test_arm_targets_carry_the_headset_z_past_the_lift():
+    node = pytest.importorskip("lookie_teleop.node")
+    fake, ctrl, held = _engage_fake(node)
+    node.TeleopNode._engage(fake, "left", 0.0)
+    fake.arms["left"].mode = node.ACTIVE
+    fake.arms["left"].bounded = False
+    node.TeleopNode._arms(fake, 0.0, 0.02, fake.fh0)
+    before = fake.arms["left"].pos.copy()
+    fake.waist.arm_dz = -0.1
+    node.TeleopNode._arms(fake, 0.0, 0.02, fake.fh0)
+    np.testing.assert_allclose(fake.arms["left"].pos - before, [0.0, 0.0, -0.1], atol=1e-12)
+
+
+def test_joint_waist_publishes_lift_and_pitch_joints():
     from types import SimpleNamespace
     node = pytest.importorskip("lookie_teleop.node")
-    calls, reasons = [], []
+    sent = []
+    w = Waist([0.0, 0.0, 0.15], 0.1, 0.0, WaistConfig(), frozenset({"waist_pitch"}))
+    joints = parse_torso_joints(["z:torso_joint1", "pitch:torso_joint2"])
+    f = SimpleNamespace(torso=dict(joints=joints, modules=["a", "b"]),
+                        torso_q=None, waist=w, fb={}, joint_pub=SimpleNamespace(publish=sent.append),
+                        _stamped=lambda t, frame: t())
+    node.TeleopNode._on_joint_feedback(f, SimpleNamespace(name=["torso_joint2", "torso_joint1"], position=[0.1, 0.15]))
+    pos, pitch, yaw = node.TeleopNode._torso_feedback(f)
+    np.testing.assert_allclose(pos, [0.0, 0.0, 0.15])
+    assert pitch == pytest.approx(0.1) and yaw == 0.0
+    node.TeleopNode._publish_torso(f)
+    assert list(sent[0].name) == ["torso_joint1", "torso_joint2"]
+    assert list(sent[0].position) == pytest.approx([0.15, 0.1])
+    f.torso_q = None
+    f._torso_feedback = lambda: node.TeleopNode._torso_feedback(f)
+    assert node.TeleopNode._missing_feedback(f) == ["torso joints", "left_arm_pose", "right_arm_pose"]
 
-    class Future:
-        def __init__(self, ok): self.ok = ok
-        def result(self): return SimpleNamespace(success=self.ok, message="queue full")
-        def add_done_callback(self, cb): cb(self)
 
-    log = SimpleNamespace(error=lambda m: reasons.append(m))
-    fake = SimpleNamespace(p={"home_modules": ["torso_pitch_joint", "left_arm_pose"], "haptic_long_press": [0.0, 0.0]},
-                           cancel_client=SimpleNamespace(service_is_ready=lambda: True,
-                                                         call_async=lambda req: calls.append(req) or Future(False)),
-                           home=object(), state=node.HOMING, get_logger=lambda: log,
-                           _disable=lambda r: reasons.append(r), lp_b=ShortLongPress(1.0), lp_a=LongPress(1.0),
-                           lp_y=LongPress(1.0), lp_x=LongPress(1.0), _button=lambda msg, i: msg == i)
-    fake._on_home_cancel = lambda fut: node.TeleopNode._on_home_cancel(fake, fut)
-    fake._abort_home = lambda: node.TeleopNode._abort_home(fake)
-    node.TeleopNode._buttons(fake, None, node.BTN_YB, 0.0)
-    node.TeleopNode._buttons(fake, None, None, 0.3)          # short press B released
-    assert len(calls) == 1                                   # one global cancel
-    assert fake.home is None
-    assert reasons == ["Home cancel failed: queue full", "Home interrupted by user (short press B)"]
+def test_joint_waist_roles_map_any_axis_with_its_sign():
+    """A yaw joint turning right-positive is negated both ways; unmapped waist axes are dropped."""
+    from types import SimpleNamespace
+    node = pytest.importorskip("lookie_teleop.node")
+    profile = parse_discover(json.loads(FIXTURE.read_text()), ALL_AXES)
+    profile.vector_ports["waist_joints"] = SimpleNamespace(topic="/ks/control/joint", labels=["lift", "turn"],
+                                                           lower=np.array([0.0, -1.0]), upper=np.array([0.4, 0.5]))
+    log = SimpleNamespace(info=lambda *a: None, error=lambda *a: None)
+    f = SimpleNamespace(_typed=lambda k: ["z:lift", "yaw:-turn"], p={"kstone_namespace": "/ks"}, joint_pub=None,
+                        waist_cfg=WaistConfig(), get_logger=lambda: log, create_subscription=lambda *a: None,
+                        create_publisher=lambda *a: "pub", _on_joint_feedback=None)
+    node.TeleopNode._setup_torso_joints(f, profile)
+    assert f.waist_cfg.z_limits == (0.0, 0.4)
+    assert f.waist_cfg.yaw_limits == pytest.approx((-0.5, 1.0))
+    assert not profile.axes & {"waist_x", "waist_pitch"} and {"waist_z", "waist_yaw"} <= profile.axes
+    node.TeleopNode._on_joint_feedback(f, SimpleNamespace(name=["lift", "turn"], position=[0.2, 0.3]))
+    pos, pitch, yaw = node.TeleopNode._torso_feedback(f)
+    np.testing.assert_allclose(pos, [0.0, 0.0, 0.2])
+    assert pitch == 0.0 and yaw == pytest.approx(-0.3)
+    sent = []
+    f.waist = Waist(pos, pitch, 0.4, f.waist_cfg, profile.axes)
+    f.joint_pub, f._stamped = SimpleNamespace(publish=sent.append), lambda t, frame: t()
+    node.TeleopNode._publish_torso(f)
+    assert list(sent[0].name) == ["lift", "turn"] and list(sent[0].position) == pytest.approx([0.2, -0.4])
+
+
+@pytest.mark.parametrize("entries", [["torso_joint1"], ["roll:j"], ["z:a", "z:b"], ["z:"]])
+def test_torso_joints_rejects_bad_entries(entries):
+    with pytest.raises(ValueError):
+        parse_torso_joints(entries)
+
+
+def test_controller_tcp_is_mirrored_for_the_left_controller():
+    """+y is inward on both sides: the right controller takes the offset as given, the left its mirror."""
+    offset = [0.05, 0.05, 0.07, 0.1, 0.2, 0.3]
+    right, left = tcp_transform(offset, "right"), tcp_transform(offset, "left")
+    np.testing.assert_allclose(right[:3, 3], [0.05, 0.05, 0.07])
+    np.testing.assert_allclose(left[:3, 3], [0.05, -0.05, 0.07])
+    mirror = np.diag([1.0, -1.0, 1.0])
+    np.testing.assert_allclose(left[:3, :3], mirror @ right[:3, :3] @ mirror, atol=1e-12)
+
+
+def test_chassis_mode_pitches_the_waist_about_its_pivot():
+    """Chassis mode: the pitch axis (pitch_pivot below the torso frame) keeps its x; waist mode is unchanged."""
+    from lookie_teleop.mapping import Waist, WaistConfig
+    cfg = WaistConfig(x_rate=10.0, z_rate=10.0, pitch_rate=10.0, yaw_rate=10.0, pitch_pivot=0.27)
+    chassis = frozenset({"waist_z", "waist_pitch"})
+    w = Waist([0.1, 0.0, 1.0], 0.0, 0.0, cfg, ALL_AXES)
+    w.update(0.02, (0.0, 0.0, 0.0, 0.0), chassis)
+    for _ in range(100):
+        w.update(0.02, (0.0, 0.5, 0.0, 0.0), chassis)
+    assert w.target[1] == pytest.approx(0.5)
+    axis_x = w.position[0] - 0.27 * math.sin(w.target[1])
+    assert axis_x == pytest.approx(0.1)
+    assert w.position[0] == pytest.approx(0.1 + 0.27 * math.sin(0.5))
+    assert w.arm_frame()[0, 3] == pytest.approx(0.1)       # the arms do not move with the torso swing
+    for _ in range(100):                                      # back to waist mode: no jump, x held
+        w.update(0.02, (0.0, 0.0, 0.0, 0.0))
+    assert w.arm_frame()[0, 3] == pytest.approx(w.position[0] - 0.27 * math.sin(0.5))
+    still = Waist([0.1, 0.0, 1.0], 0.0, 0.0, cfg, ALL_AXES)
+    for _ in range(100):
+        still.update(0.02, (0.0, 0.5, 0.0, 0.0))
+    assert still.position[0] == pytest.approx(0.1)

@@ -31,7 +31,7 @@ class Reference:
     p0: dict                      # side -> 4x4 controller pose in F_h(0)
     M0: np.ndarray                # controller midpoint in F_h(0)
     m0: np.ndarray                # end-effector midpoint in F_t(0)
-    C: dict                       # side -> controller grip -> end-effector tool rotation, anchored at A
+    C: dict                       # side -> end-effector orientation at A (Home), in the body frame
     zh0: float                    # body height (world z of B_0)
     theta0: float                 # body lean
     yaw_h0: float                 # body yaw in XR world
@@ -44,9 +44,10 @@ def check(headset: np.ndarray, controllers: dict, ee: dict, R: np.ndarray,
 
     Positions are aligned at the midpoint: the vector between the hands maps 1:1, so the arms take
     the operator's hand spacing. A spacing that differs from the arms' only warns; the per-arm
-    catch-up then moves each arm onto its mapped target. ``C`` is solved so that ``R Q^p_i(0) C_i``
-    equals the end-effector orientation at A: orientation is relative to the grip at A, so
-    controllers and hand tracking with different axes map alike.
+    catch-up then moves each arm onto its mapped target. Orientation is absolute: ``C_i = R^T Q^ee_i(0)``
+    (A is taken right after Home, so the Home orientation), so a controller TCP level and pointing along
+    the body heading maps to the Home orientation and any other grip to that rotation of it; an arm whose
+    mapped orientation differs at engage reaches it through the catch-up.
 
     Returns ``(reject_reason, None)`` or ``(None, Reference)``; only the first failure is reported.
     """
@@ -74,7 +75,7 @@ def check(headset: np.ndarray, controllers: dict, ee: dict, R: np.ndarray,
     if abs(gap_ctrl - gap_ee) >= cfg.spacing_tol:
         warnings.append(f"controller spacing {gap_ctrl:.2f} m differs from end-effector spacing {gap_ee:.2f} m; "
                         "the arms catch up smoothly to the controller spacing when engaged")
-    C = {s: (R @ p0[s][:3, :3]).T @ ee[s][:3, :3] for s in SIDES}
+    C = {s: R.T @ ee[s][:3, :3] for s in SIDES}
     d = pl - pr
     if abs(wrap_angle(np.arctan2(-d[0], d[1]))) > cfg.yaw_warn:
         warnings.append("headset heading differs from the chest; chassis/waist yaw may keep a fixed offset")

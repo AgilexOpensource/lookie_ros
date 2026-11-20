@@ -55,9 +55,13 @@ def heading_frame(position, yaw: float) -> np.ndarray:
     return t
 
 
-def tcp_transform(offset) -> np.ndarray:
-    """Controller TCP offset [x, y, z, roll, pitch, yaw] in the controller frame."""
-    o = np.zeros(6) if offset is None else np.asarray(offset, dtype=float)
+def tcp_transform(offset, side: str = "right") -> np.ndarray:
+    """Controller TCP offset [x, y, z, roll, pitch, yaw] in the controller frame (+X pointing, +Y left, +Z up),
+    given for the right controller, where +y is inward (towards the palm); the left controller uses its mirror
+    image about the controller XZ plane (y, roll and yaw negated), so +y is inward on both sides."""
+    o = np.zeros(6) if offset is None else np.array(offset, dtype=float)
+    if side == "left":
+        o[[1, 3, 5]] *= -1.0
     t = np.eye(4)
     t[:3, :3] = rpy_to_matrix(o[3], o[4], o[5])
     t[:3, 3] = o[:3]

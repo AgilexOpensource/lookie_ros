@@ -81,30 +81,9 @@ modules:
       position_tolerance: 0.01
       orientation_tolerance: 0.017
     # period_s: 0.02  # engine dt replaces it
-  torso_pose:
-    type: frame_target
-    frame: chest_link
-    joints: [torso_joint1, torso_joint2]
-    reference: chassis_base_link
-    weight: 1
-    position_weight: [0, 0, 5]  # lift only moves z
-    orientation_weight: [0, 1, 0]  # torso_joint2 pitches about world y
-    world_axes: true
-    lm_damping: 0.1
-    position_tolerance: 0.001
-    orientation_tolerance: 0.01
-    task: {level: 0}
-    # Home at about the lift's own speed (0.01 m/s) and the previous 0.5 rad/s pitch.
-    home_motion: {velocity_scale: 0.6667, timeout_s: 2.0}
-    trajectory:
-      lead_speed_scale: 3.0
-      # Matched to the lift (torso_joint1 ~0.01 m/s): a faster height ramp is chased by waist pitch instead.
-      position: {velocity: 0.015, acceleration: 0.015, deceleration: 0.015, reversal_deceleration: 0.015, jerk: 0.15}
-      # Teleop already rate-limits pitch to 0.8 rad/s.
-      orientation: {velocity: 0.8, acceleration: 1.25, deceleration: 1.25, reversal_deceleration: 2.5, jerk: 12.5}
   left_arm_pose:
     type: frame_target
-    frame: left_base_link  # no tool frame in this URDF
+    frame: l_palm  # palm point on the hand axis (URDF), mapped from the controller_tcp point
     joints: [l_arm_joint1, l_arm_joint2, l_arm_joint3, l_arm_joint4, l_arm_joint5, l_arm_joint6, l_arm_joint7]
     # joints: [torso_joint1, torso_joint2, l_arm_joint1, l_arm_joint2, l_arm_joint3, l_arm_joint4, l_arm_joint5, l_arm_joint6, l_arm_joint7]  # arms share the waist
     reference: chassis_base_link
@@ -123,7 +102,7 @@ modules:
       orientation: {velocity: 5.0}
   right_arm_pose:
     type: frame_target
-    frame: right_base_link
+    frame: r_palm
     joints: [r_arm_joint1, r_arm_joint2, r_arm_joint3, r_arm_joint4, r_arm_joint5, r_arm_joint6, r_arm_joint7]
     # joints: [torso_joint1, torso_joint2, r_arm_joint1, r_arm_joint2, r_arm_joint3, r_arm_joint4, r_arm_joint5, r_arm_joint6, r_arm_joint7]  # arms share the waist
     reference: chassis_base_link
@@ -154,12 +133,23 @@ modules:
     reference: initial
     posture_velocity_scale: 0.1
     task: {level: 1}
-  torso_joint:
+  # Waist: two independent joint targets in the same QP level (no frame task), so the slow lift never
+  # holds back the pitch and each homes at its own speed.
+  torso_lift_joint:
     type: joint_target
-    joints: [torso_joint1, torso_joint2]
+    joints: [torso_joint1]
+    home_motion: {velocity_scale: 1.0, timeout_s: 2.0}
+    on_idle: claim
+    release_after_s: 0.25
+    task: {level: 0}
+  torso_pitch_joint:
+    type: joint_target
+    joints: [torso_joint2]
+    trajectory: {acceleration_factor: 0.2}
     home_motion: {velocity_scale: 0.1667, timeout_s: 2.0}
     on_idle: claim
     release_after_s: 0.25
+    task: {level: 0}
   left_arm_joint:
     type: joint_target
     joints: [l_arm_joint1, l_arm_joint2, l_arm_joint3, l_arm_joint4, l_arm_joint5, l_arm_joint6, l_arm_joint7]
@@ -209,7 +199,7 @@ modules:
   #   polygon: [[0.1805, 0.1785], [0.0, 0.2275], [-0.235, 0.0], [0.0, -0.2275], [0.1805, -0.1785]]
   #   # margin: 0.02
   #   margin: 0.05
-  #   recovery_tasks: [torso_pose]
+  #   recovery_tasks: []
   #   closed_loop: false
   #   payloads:
   #     - {frame: left_base_link, mass: 3.0}

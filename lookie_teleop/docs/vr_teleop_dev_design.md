@@ -93,8 +93,8 @@ Fields used from `/kstone/state`:
 
 | Topic | Type | Content |
 | --- | --- | --- |
-| `/kstone/left_arm_pose/control/pose` | `PoseStamped`, frame `chassis_base_link` | Left arm end (`left_base_link`) target |
-| `/kstone/right_arm_pose/control/pose` | Same as above | Right arm end (`right_base_link`) target |
+| `/kstone/left_arm_pose/control/pose` | `PoseStamped`, frame `chassis_base_link` | Left arm end target (gripper `l_gripper_tip`, Revo2 hand `l_palm`) |
+| `/kstone/right_arm_pose/control/pose` | Same as above | Right arm end target (`r_gripper_tip` / `r_palm`) |
 | `/kstone/torso_pose/control/pose` | `PoseStamped`, frame `chassis_base_link` | Waist `chest_link` target |
 | `/kstone/chassis/control/pose` | `PoseStamped`, frame `world_frame` | Chassis planar pose target (**omni only**, while headset-driven) |
 | `/kstone/chassis/control/cmd_vel` | `Twist` | Joystick chassis velocity (omni x/y/yaw, differential x/yaw); see the publishing rules below |
@@ -120,16 +120,16 @@ The response `accepted request_id=N` **only means the request is queued**; compl
 
 ## 3. Model profile
 
-No model name is written in the node. The parameter `body_axes` (default all: `chassis` / `waist_x` / `waist_z` / `waist_pitch` / `waist_yaw`) lists the axes the headset may drive, which is then intersected with discover: when the `chassis_kinematics` of the `chassis` module is not omni (`omni`), the `chassis` axis is removed automatically and joystick vy is set to 0; the joystick velocity is further clipped to the upper and lower limits of the chassis `velocity` port in discover. The `body_axes` of each model is given in the bringup configuration (`lookie_bringup/config/<model>/teleop.yaml`); the table below shows the resulting behaviour for the two models.
+No model name is written in the node. The parameter `body_axes` (default: `chassis` / `waist_x` / `waist_z` / `waist_pitch` / `waist_yaw`) lists the axes the headset may drive, which is then intersected with discover: without a chassis `pose_target` port (`control/pose`) the `chassis` axis is removed automatically; when the `chassis_kinematics` is not omni (`omni`), joystick vy is set to 0 and the headset drives the chassis without sideways motion (§8.3); the joystick velocity is further clipped to the upper and lower limits of the chassis `velocity` port in discover. The `body_axes` of each model is given in the bringup configuration (`lookie_bringup/config/<model>/teleop.yaml`); the table below shows the resulting behaviour for the two models.
 
 | Capability | trio (omni `omni`) | neo (differential `differential`) |
 | --- | --- | --- |
-| Headset → chassis | Yes: planar x/y/yaw (pose target) | No |
+| Headset → chassis | Yes: planar x/y/yaw (pose target) | Forward and yaw, no sideways (pose target), chassis mode |
 | Headset → waist x (forward/backward) | Yes | No |
-| Headset → waist Z | Yes | No |
+| Headset → waist Z | Yes | Yes (lean-compensated height; the arms cover the slow lift and the rest below its lower end) |
 | Headset → waist pitch | Yes | Yes |
 | Headset → waist yaw | Yes (waist mode) | No |
-| Y long press switch | Yes | No (ignored, hint in `~/status`) |
+| Y long press switch | Yes | Yes (waist ↔ chassis yaw; default waist) |
 | Left joystick | x forward/backward, y left/right translation | Forward/backward only (`linear.y` is ignored by kstone; teleop also sets it to 0) |
 | Right joystick x | Chassis turning | Chassis turning |
 | Right joystick y (X switches Z/pitch) | Yes | Yes (both Z offset and pitch offset adjustable) |
@@ -195,7 +195,7 @@ stateDiagram-v2
 | B (right `buttons[4]`) | Long press ≥ `long_press_s`=1.0 s, triggered only once while held | All except Homing | Return Home; clear the joystick waist offsets |
 | B short press | Released < 1 s after being pressed (triggered on the release edge; a press that already triggered a long press does not count as a short press) | Homing, Homed, Enabled | Full disable (reason: stopped by user): stops teleoperation and prevents accidental joystick input. During Homing it interrupts the Home: kstone `~/home_cancel` is called once, and every homing module stops smoothly on its current ramp point and holds there (the modules stay enabled) |
 | A (right `buttons[3]`) | Long press 1 s, timed only while Homed (if already held during Homing, the 1 s is counted from Home completion, without releasing and pressing again) | Homed | Calibration (§7); → Enabled if it passes |
-| Y (left `buttons[4]`) | Long press 1 s | Homed, Enabled (trio) | Headset drive target chassis ↔ waist; default from parameter `default_body_mode` |
+| Y (left `buttons[4]`) | Long press 1 s | Homed, Enabled (with `chassis`) | Headset drive target chassis ↔ waist; default from parameter `default_body_mode` |
 | X (left `buttons[3]`) | Long press 1 s | Homed, Enabled | Right joystick y adjusts waist Z ↔ waist pitch (default Z); **no emergency stop** |
 | Grip trigger `axes[3]` | Press threshold 0.6 / release 0.4 (hysteresis); interval between two presses ≤ `double_tap_s`=0.4 s and the second press kept held | Enabled | That arm Held → CatchUp; release → Held |
 | Index trigger `axes[2]` | Continuous value 0~1 | All states | Proportional end effector open/close (§10) |
@@ -291,12 +291,17 @@ $$\mathbf e_i = \mathbf m_0 + R\,(\mathbf p_i - \mathbf M_0),\qquad Q_i = R\,Q^p
 $$X_i^{T} = F_t(t)\cdot(\mathbf e_i, Q_i)$$
 
 - **Aligned at the midpoint**: the relative vector of the two hands $\mathbf p_L-\mathbf p_R$ is mapped 1:1, so the spacing and relative position of the two ends match those of the two controllers. A spacing mismatch at A is not rejected: when each arm is engaged by double-press, the §9.3 catch-up moves it smoothly from the measured end pose to the mapped target.
-- $C_i$ is **solved at A**: $C_i = (R\,Q^p_i(0))^{-1}\,Q^{ee}_i(0)$, i.e. at A the mapped orientation equals the end orientation at that time, and afterwards only the controller rotation relative to A is transferred. Differences in the grip frame definition between controllers and hand tracking, or in the way the controller is held, do not affect the alignment, and the relative orientation of the two controllers at A is not required to match that of the two ends.
+- Orientation is **mapped absolutely**: $C_i = R^{-1}\,Q^{ee}_i(0)$, with $Q^{ee}_i(0)$ the end orientation in the torso heading frame at A (right after Home, so the Home orientation). The controller TCP (`controller_tcp`, including its rotation) level and facing the body heading maps to the Home orientation, and any other orientation to the same rotation of it, whatever grip is held at A. A mapped orientation that differs from the end at engage is reached smoothly by the catch-up (§9.3).
 - The arm references are **recorded only at A**; afterwards every release / re-press of the grip trigger goes through catch-up without recalibration.
 - **Why the heading frame (yaw only) is used instead of the full $B_t$**:
   - when the person leans forward, the hands move forward relative to the heading frame → the arms reach forward;
   - when the waist follows pitch at the same time, the origin of $F_t$ moves forward with `chest_link`, and the two are consistent;
   - when the waist does not follow pitch (single arm engaged), leaning forward still makes the arm reach forward, so there is no case of "the body moved but the arm did not react".
+- `lean_pivot_m` $L$ (default 0) moves the origin of the mapping frame from the chest to the point fixed relative to the hip: $\mathbf o = \mathbf c - L\,R_h\,(\sin\theta - \sin\theta_0,\ 0,\ \cos\theta - \cos\theta_0)$, with chest position $\mathbf c$, lean $\theta$ and $\theta_0$ at A. Walking still does not move the arms, while leaning swings the hands about the hip, in the same direction as the robot's waist pitch.
+- $L$ is the operator's hip → chest-worn headset distance, taken from the matching robot geometry: the last waist pitch axis → `chest_link` distance (URDF), so the hip maps to the waist pitch axis and the chest to `chest_link`; the same value is the robot waist's pitch pivot in chassis mode (§8.2). Too small: leaning still pushes the arms a little; too large: they pull back.
+- The mapping frame moves and turns with the headset, so with the controllers still relative to the headset, walking or turning as a whole (including the chassis turning with the operator) leaves the arms in place on the robot; turning only the head with the hands still turns them the other way.
+- Lookie neo uses $L$ = 0.27 m (torso_joint2 axis, URDF 0.269): its waist has no x / yaw, so the body's translation and turn do not drive the waist, and leaning reaches with the arms.
+- Lookie trio uses $L$ = 0.27 m (torso_joint3 axis, URDF 0.2705): in chassis mode the hip point drives the base, so leaning does not push the base.
 - The target is converted to `chassis_base_link` before publishing. $F_t(t)$ uses the **torso target** (the value maintained by teleop itself) instead of feedback, to avoid forming a loop with the WBC tracking error.
 
 ### 8.2 Waist (both arms engaged; waist mode follows all waist axes, chassis mode follows only Z and pitch; neo has pitch only)
@@ -315,9 +320,9 @@ $$\psi^r_t = \psi^r_{ref} + (\psi^h_t - \psi^h_{ref})$$
   - **Z: waist and arms rise and lower together**. The origin of $F_t$ includes the torso target z, and both arm targets (Active or Held) are expressed in $F_t$, so the relative height of waist and arms does not change.
   - **pitch: adjusts the waist only**. $F_t$ contains only yaw, so the pitch offset does not change the arm targets in the chassis frame. Purpose: the pitch of the headset on the wearer's chest cannot be fixed absolutely, so the offset is used to calibrate the pitch alignment error between the human torso and the robot torso.
 - When not both arms are engaged, the waist target keeps its last value (with the joystick offset still applied).
-- Chassis mode (trio): the headset horizontal displacement and yaw drive the chassis (§8.3), and waist x and yaw are held; Z and pitch follow the headset as usual by the formulas above (same as waist mode, with no deadband), so the waist follows squatting or bending forward while walking.
+- Chassis mode: the headset horizontal displacement and yaw (trio; neo without the sideways part) drive the chassis (§8.3), and waist x and yaw are held; Z and pitch follow the headset as usual by the formulas above (same as waist mode, with no deadband), so the waist follows squatting or bending forward while walking. With a waist x axis (trio) and `lean_pivot_m` $L$ > 0, the waist x is not held but the x of the pitch axis ($L$ along the torso target frame's $-z$) is: $x = x_p + (R\,(0,0,L))_x$ with $R$ the torso target orientation, so bending pitches the chest about that axis instead of about the chest. The $F_t$ the arm targets are in leaves that x out (`arm_dx`, kept after chassis mode so nothing jumps), so bending does not carry the arms forward with the chest; the controllers alone place them.
 
-### 8.3 Chassis (trio, both arms engaged, chassis mode, no joystick input)
+### 8.3 Chassis (both arms engaged, chassis mode, no joystick input)
 
 $$C_t = C_{ref}\;\oplus\;\mathrm{planar}\big(F_h(ref)^{-1}F_h(t)\big)$$
 
@@ -325,6 +330,8 @@ $$C_t = C_{ref}\;\oplus\;\mathrm{planar}\big(F_h(ref)^{-1}F_h(t)\big)$$
 - Smooth deadband (2 cm / 2°: beyond twice the deadband, output = displacement − deadband; inside, a quadratic transition, with both output and slope continuous, so the target does not start abruptly from rest when crossing the deadband edge) + target velocity limiting (along the body axes of the target heading: elliptical combination of `chassis_vx_max` / `chassis_vy_max`, and `chassis_w_max`). The target is no longer clamped near the chassis feedback; when the chassis cannot keep up, kstone catches up within its own velocity / acceleration limits.
 - Yaw reversal prevention: the target yaw leads the chassis feedback by at most 150°. The yaw of the pose target is wrapped to ±180° and kstone turns in the shortest direction, so a lead of more than 180° would make the chassis turn the opposite way; this is not triggered during normal following.
 - Divergence protection: disables when the error to the desired pose exceeds 0.2 m / 15° and the chassis feedback keeps moving **away** from the desired pose (receding speed > 0.05 m/s or 0.1 rad/s) for 1.5 s (when the operator sways quickly left and right, the reverse motion of the lagging chassis was measured to last up to about 0.7 s, which should not trigger). This is used to detect cases such as a reversed chassis axis. A chassis blocked by an obstacle and not moving does not count as diverging and does not cause a disable.
+- $F_h$ here is the lean-compensated hip point (§8.1, `lean_pivot_m`), so leaning to reach does not walk the base.
+- Differential (neo): only the operator's walk along their own heading moves the target, along the target heading, at most `chassis_vx_max`; sideways steps are dropped. Each cycle the part of the target beside the measured base is dropped too, so a base still turning never gets a goal it cannot drive to. kstone plans distance along the heading and yaw together (drives while it turns, never sideways); it drives a Ruckig profile on its own reference pose (no odometry delay model), latches at the goal when the profile ends inside the tolerance (neo 1 cm / 1°) until a new goal comes and corrects from rest only beyond it; its accelerations match the measured base (neo linear 0.6 up / 1.0 down m/s², angular 0.65 rad/s²).
 - Published to `chassis/control/pose` (`world_frame`).
 
 ### 8.4 Reference recording instants
@@ -343,7 +350,7 @@ $$C_t = C_{ref}\;\oplus\;\mathrm{planar}\big(F_h(ref)^{-1}F_h(t)\big)$$
 
 | Quantity | Handling when both arms are engaged again | Reason |
 | --- | --- | --- |
-| Arms | The controllers are mapped in the headset heading frame $F_h(t)$, so the person walking / turning as a whole does not change the target; on engaging, the arm catches up smoothly from the held target to the mapped target | The mapping itself is local to the body and needs no reset |
+| Arms | The controllers are mapped in the headset heading frame $F_h(t)$, so the person walking / turning as a whole does not change the target; on engaging, the arm catches up smoothly from the held target to the mapped target. | The mapping itself is local to the body and needs no reset |
 | Waist Z, pitch | Absolute quantities relative to A, aligned smoothly to the current body posture through rate limiting | Keeps the height / pitch calibration from A; alignment is possible only without a reset |
 | Waist x, yaw | Reference re-recorded at the both-arms-engaged instant (§8.4), continuing from the current value | The person may have turned or walked a long way; aligning would twist the upper body relative to the chassis or cause a jump |
 | Waist y, roll | Not mapped, held | No corresponding degree of freedom, or not needed |
@@ -424,7 +431,7 @@ sequenceDiagram
     end
 ```
 
-- `home_modules` default: `torso_pose, left_arm_pose, right_arm_pose`. Only the pose module Home is used, not the joint Home of `*_arm_joint` / `torso_joint`; the end effectors do not return Home (when needed, motion control can home them separately).
+- `home_modules` default: `torso_pose, left_arm_pose, right_arm_pose`. Only the pose module Home is used, not the joint Home of `*_arm_joint`; the end effectors do not return Home (when needed, motion control can home them separately). With `torso_joints` set, the waist is driven in joint space (a generic interface, not model-specific): each entry is `role:joint` with role `x`, `z`, `pitch` or `yaw`, written `role:-joint` when the joint turns against the waist convention (x forward, z up, pitch > 0 leaning forward, yaw > 0 left). The waist is sent as joint targets on `control/joint` with feedback from `feedback/joint_states`; roles without a joint read 0 and their `waist_*` axes are not driven by the headset; each role is bounded by its joint range from discover (x and z as absolute ranges, pitch and yaw intersected with `waist_*_limits_deg`). Lookie neo sets `torso_joints: ["z:torso_joint1", "pitch:torso_joint2"]`: kstone has no `torso_pose` there but two joint targets `torso_lift_joint` / `torso_pitch_joint` (same QP level), which are homed instead; the headset height (lean-compensated with `lean_pivot_m`, §8.1, so leaning alone does not move the lift) plus the right stick in z mode drive the lift, the lean drives the pitch. The arm targets are absolute in `chassis_base_link` and move with the lift target (`waist_z_rate`), so the arms cover the slow physical lift. Below the lift's lower joint limit the active arm targets keep going down (`arm_dz`, same rate), down to `waist_z_range` (neo: the Home gripper tip down to 0.04 m below the floor); the upper limit is not compensated, and the stick moves only the lift.
 - For each module, success requires all of the following:
   1. The corresponding `request_id` is found in `outcomes` with `applied=true`; polling starts as soon as possible after the request, and **not finding it within `outcome_timeout_s` is treated as failure** (outcomes is a ring buffer and the entry may be pushed out); when `applied=false`, `error` is written to the disable reason.
   2. Only the `home_state` value in a **snapshot that already contains that outcome** is accepted, and it subsequently reaches `succeeded`. `home_state` stays at the previous terminal state, so an old `succeeded` from before the request does not count; within one snapshot the outcome and the module state are consistent (it is already set to `waiting` on acceptance), so the result is determined correctly even when the robot is already at the Home point and `waiting/executing` is never seen at 30 Hz.
@@ -493,7 +500,8 @@ Defaults are taken from `PARAMS` in `lookie_teleop/node.py`; `lookie_bringup/con
 | Joystick waist offset | `joy_z_rate` / `joy_pitch_rate` | 0.10 m/s / 0.3 rad/s |
 | Mount | `headset_forward_axis` / `mount_max_deg` / `yaw_warn_deg` | `[1,0,0]` / 35 / 15 |
 | Calibration | `calib_x` / `calib_z` / `min_cross` / `max_side` / `spacing_tol` (warning only) | `[0.15,0.70]` / `[-0.60,0.30]` / 0.10 / 0.20 / 0.10 |
-| Mapping | `R_body_to_torso` (rpy) / `controller_tcp` (xyz + rpy) | `[0,0,0]` / all 0 (orientation $C_i$ is solved at A, §8.1) |
+| Mapping | `R_body_to_torso` (rpy) / `controller_tcp` (xyz + rpy) | `[0,0,0]` / all 0; all 0 (common.yaml); set per end effector in teleop.yaml. **Always given for the right controller** (+X pointing, +Y inward towards the palm, +Z up; xr_media converts the WebXR grip pose, whose origin is at the curled fingers); the left controller uses the mirror image (y, roll, yaw negated). The point is offset by xyz first, then the frame rotated about it by rpy; that TCP frame level and forward maps to the end-effector Home orientation. Gripper: `[0.06,0,0,0,0.5236,0]` (6 cm ahead, pitch 30°) → `*_gripper_tip`; Revo2 hand: `[0,0.05,0,0,0.5236,0]` (5 cm inward, pitch 30°) → `*_palm` (URDF, +0.07 m on the hand axis). §8.1 |
+| Mapping | `lean_pivot_m` | 0 (neo, trio: 0.27, §8.1, §8.2) |
 | Waist | `k_x` / `k_z` / `k_pitch` | 1.0 / 1.0 / 1.0 |
 | Waist Z range (relative to A) | `waist_z_range` | `[-0.8, 0.15]` |
 | Waist rate limits | `waist_x_rate` / `waist_z_rate` / `waist_pitch_rate` / `waist_yaw_rate` | 0.2 m/s / 0.2 m/s / 0.8 rad/s / 1.0 rad/s |
@@ -572,7 +580,7 @@ ros2 launch lookie_bringup teleop.launch.py
 | Unit | Long press / double-press-and-hold timing; mount decomposition round trip; arm mapping midpoint 1:1 (spacing mismatch is warning only); each calibration check rejection / warning; workspace clamp (midline may be crossed, each arm independent); catch-up convergence / too fast / timeout; chassis divergence protection (faults only when the base moves away from the target, not when it lags but approaches); return Home determination (outcome not accepted / timeout, old succeeded, fast completion, timed_out/aborted, held_by occupied); each disable trigger |
 | State machine | All transition edges; only the index trigger effective during Homing; only B long press and the index trigger effective when Disabled; reference re-recorded after the joystick is released and the chassis has settled; references at the Y switch instant |
 | Integration | kstone_ros + xr_media_ros (or replayed xr data): A → both arms Active → waist / chassis following → boundary → B return Home |
-| Before real-robot tests | Under neo (`body_axes: [waist_pitch]`) the headset drives pitch only; Y switch under trio; disconnecting a controller / exiting XR only stops the arms without disabling |
+| Before real-robot tests | Under neo (`body_axes: [chassis, waist_z, waist_pitch]`) the headset drives lift and pitch, plus chassis forward and yaw after Y; Y switch under trio; disconnecting a controller / exiting XR only stops the arms without disabling |
 
 Build and test, run from the workspace root (`python3 -m venv` is needed only the first time):
 

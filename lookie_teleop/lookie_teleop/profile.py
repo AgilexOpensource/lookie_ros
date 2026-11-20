@@ -9,7 +9,9 @@ from dataclasses import dataclass, field
 import numpy as np
 
 ALL_AXES = frozenset({"chassis", "waist_x", "waist_z", "waist_pitch", "waist_yaw"})
-# Headset pose-following of the chassis needs lateral motion (vx, vy, wz).
+# Waist DOFs a joint-driven waist may map (``torso_joints``), each to the waist_<role> body axis.
+TORSO_ROLES = ("x", "z", "pitch", "yaw")
+# Bases that accept vy (stick lateral and headset lateral following).
 HOLONOMIC = frozenset({"omni"})
 
 
@@ -52,6 +54,22 @@ class Profile:
         return self.kinematics in HOLONOMIC
 
 
+def parse_torso_joints(entries) -> list:
+    """``torso_joints`` entries ``role:joint`` (``role:-joint`` when the joint turns against the waist
+    convention: x forward, z up, pitch > 0 leaning forward, yaw > 0 left) -> [(role, joint, sign)]."""
+    out = []
+    for e in entries:
+        role, sep, joint = (v.strip() for v in str(e).partition(":"))
+        sign = -1.0 if joint.startswith("-") else 1.0
+        joint = joint.lstrip("-").strip()
+        if not sep or role not in TORSO_ROLES or not joint:
+            raise ValueError(f"torso_joints entry {e!r} is not role:joint with role in {list(TORSO_ROLES)}")
+        if any(r == role for r, _, _ in out):
+            raise ValueError(f"torso_joints maps {role} twice")
+        out.append((role, joint, sign))
+    return out
+
+
 def _bounds(values, default):
     return np.array([default if v is None else float(v) for v in values], dtype=float)
 
@@ -64,8 +82,6 @@ def parse_discover(doc: dict, body_axes=ALL_AXES) -> Profile:
     chassis = modules.get("chassis")
     kinematics = chassis.get("chassis_kinematics", "") if chassis else ""
     axes = set(body_axes)
-    if kinematics not in HOLONOMIC:
-        axes.discard("chassis")
     profile = Profile(
         kinematics=kinematics,
         axes=frozenset(axes),
@@ -99,4 +115,6 @@ def parse_discover(doc: dict, body_axes=ALL_AXES) -> Profile:
                 profile.vector_ports[mid] = VectorPort(
                     port["control_topic"], list(port["labels"]),
                     _bounds(port.get("lower", [None] * n), -np.inf), _bounds(port.get("upper", [None] * n), np.inf))
+    if not profile.chassis_pose_topic:
+        profile.axes = profile.axes - {"chassis"}   # headset following goes through the pose target
     return profile

@@ -53,11 +53,14 @@ class WaistConfig:
     k_pitch: float = 1.0
     z_range: tuple = (-0.30, 0.10)       # relative to A
     pitch_limits: tuple = (-math.pi / 6, math.pi / 2)  # absolute in base frame: back 30°, forward 90°
-    yaw_limits: tuple = (-math.radians(89.0), math.radians(89.0))  # absolute in base frame (torso_joint4 ±90°)
+    yaw_limits: tuple = (-math.radians(89.0), math.radians(89.0))  # absolute in base frame (waist yaw joint range)
+    z_limits: tuple = (-math.inf, math.inf)  # absolute z bounds (joint-driven lift: its joint range)
+    x_limits: tuple = (-math.inf, math.inf)  # absolute x bounds (joint-driven waist x: its joint range)
     x_rate: float = 0.20
     z_rate: float = 0.20
     pitch_rate: float = 0.80
     yaw_rate: float = 1.00
+    pitch_pivot: float = 0.0  # pitch axis on the torso frame's -z (m); chassis mode keeps its x (see update)
 
 
 class Waist:
@@ -81,10 +84,14 @@ class Waist:
         self.base = np.array([self.z0, self.pitch0, self.yaw0])
         self.target = self.base.copy()
         self.offset = np.zeros(2)            # dz, dpitch
+        self.arm_dz = 0.0                    # headset z below the lift's lower end, carried by the arms
         self.zh0 = self.theta0 = 0.0
         self.yaw_ref_robot = self.yaw0
         self.yaw_body_last = 0.0
         self.yaw_turn = 0.0                  # operator's turn since the reference, unwrapped
+        self.pivot_x = None                  # held x of the pitch axis while the headset drives the chassis
+        self.arm_dx = 0.0                    # torso x the pivot pitch added since; the arm frame leaves it out
+        self.pivot_dx0 = 0.0
 
     def set_body_reference(self, zh0: float, theta0: float) -> None:
         self.zh0, self.theta0 = zh0, theta0
@@ -101,13 +108,15 @@ class Waist:
         not driven back to an older target once its feedback recovers."""
         self.target_x = self.base_x = float(position[0])
         self.target = np.array([float(position[2]), float(pitch), float(yaw)])
+        self.pivot_x = None
         self.base = self.target - np.array([self.offset[0], self.offset[1], 0.0])
 
     def _bounds(self, i: int):
         """Absolute [lo, hi] of z (i=0, range around A) or pitch (i=1, hard limits in the base frame)."""
         cfg = self.cfg
         if i == 0:
-            return self.z0 + cfg.z_range[0], self.z0 + cfg.z_range[1]
+            return (max(self.z0 + cfg.z_range[0], cfg.z_limits[0]),
+                    min(self.z0 + cfg.z_range[1], cfg.z_limits[1]))
         return cfg.pitch_limits
 
     def add_offset(self, axis: str, delta: float) -> None:
@@ -128,13 +137,15 @@ class Waist:
         """``body`` = (zh, theta, yaw_h[, forward]) while dual-active, else None (hold).
 
         ``forward``: body displacement (m) along the heading recorded with record_x_reference().
-        ``axes``: the axes the headset drives now (default all enabled ones); the others hold."""
+        ``axes``: the axes the headset drives now (default all enabled ones); the others hold. When given
+        without waist_x (chassis mode), x follows the pitch about ``pitch_pivot``: that axis keeps its x, so
+        leaning pitches the torso about it instead of about the torso frame."""
         cfg = self.cfg
         axes = self.axes if axes is None else self.axes & axes
         if body is not None:
             zh, theta, yaw_h, *rest = body
             if "waist_x" in axes and rest:
-                self.base_x = self.x_ref_robot + cfg.k_x * rest[0]
+                self.base_x = float(np.clip(self.x_ref_robot + cfg.k_x * rest[0], *cfg.x_limits))
             if "waist_z" in axes:
                 self.base[0] = self.z0 + cfg.k_z * (zh - self.zh0)
             if "waist_pitch" in axes:
@@ -144,9 +155,12 @@ class Waist:
                 self.yaw_body_last = yaw_h
                 self.base[2] = np.clip(self.yaw_ref_robot + self.yaw_turn, *cfg.yaw_limits)
             # The range bounds headset + stick together (around the robot home at A), so the headset can
-            # reach the same limit as the stick whatever the stick offset is.
+            # reach the same limit as the stick whatever the stick offset is. z may go below the lift's
+            # lower end down to z_range: that part is carried by the arms (arm_dz).
             for i in (0, 1):
                 lo, hi = self._bounds(i)
+                if i == 0:
+                    lo = min(lo, self.z0 + cfg.z_range[0])
                 self.base[i] = np.clip(self.base[i], lo - self.offset[i], hi - self.offset[i])
         self.target_x = float(rate_limit(self.target_x, self.base_x, cfg.x_rate * dt))
         # one final clamp for headset + stick, so the torso target sent to kstone is always in range
@@ -155,6 +169,23 @@ class Waist:
             desired[i] = np.clip(desired[i], *self._bounds(i))
         step = np.array([cfg.z_rate, cfg.pitch_rate, cfg.yaw_rate]) * dt
         self.target = rate_limit(self.target, desired, step)
+        pivot = cfg.pitch_pivot > 0.0 and axes is not None and "waist_x" in self.axes and "waist_x" not in axes
+        if pivot:
+            if self.pivot_x is None:
+                self.pivot_x = self.target_x - self._pivot_dx()
+                self.pivot_dx0 = self._pivot_dx() - self.arm_dx
+            self.target_x = self.base_x = self.pivot_x + self._pivot_dx()
+            self.arm_dx = self._pivot_dx() - self.pivot_dx0
+        else:
+            self.pivot_x = None
+        self.target_x = float(np.clip(self.target_x, *cfg.x_limits))
+        lo = self._bounds(0)[0]
+        below = float(np.clip(self.base[0] + self.offset[0] - lo, min(0.0, self.z0 + cfg.z_range[0] - lo), 0.0))
+        self.arm_dz = float(rate_limit(self.arm_dz, below, step[0]))
+
+    def _pivot_dx(self) -> float:
+        """x (base frame) from the pitch axis to the torso frame at the current target."""
+        return float((self.rotation @ np.array([0.0, 0.0, self.cfg.pitch_pivot]))[0])
 
     @property
     def position(self) -> np.ndarray:
@@ -172,6 +203,12 @@ class Waist:
         """F_t: torso target position, yaw only."""
         return heading_frame(self.position, self.target[2])
 
+    def arm_frame(self) -> np.ndarray:
+        """F_t without the x the pivot pitch added (``arm_dx``, kept after chassis mode so the arms do not
+        jump): the torso swings about its pitch axis, the arm targets stay put like the operator's hands
+        relative to the hip."""
+        return heading_frame(self.position - np.array([self.arm_dx, 0.0, 0.0]), self.target[2])
+
 
 @dataclass
 class ChassisConfig:
@@ -187,6 +224,8 @@ class ChassisConfig:
     diverge_w: float = 0.1                # ... or turning away faster than this (rad/s) ...
     diverge_s: float = 1.5                # ... for this long -> fault (a lagging base under a swaying
                                           # operator moves away for up to ~0.7 s)
+    lateral: bool = True                  # False (differential): only the operator's forward walk moves the
+                                          # target, along its own heading; sideways steps are dropped
 
 
 # The pose target carries a wrapped yaw and the base turns the short way to it, so the target may never
@@ -219,6 +258,8 @@ class Chassis:
         self._yaw = 0.0           # yaw relative to ref, unwrapped: desired / target / feedback
         self._tyaw = 0.0
         self._fb_yaw = 0.0
+        self._last = None         # not lateral: last desired position and the forward walk not yet sent
+        self._ahead = 0.0
 
     def record(self, chassis_xyyaw, fh: np.ndarray) -> None:
         self.ref = np.asarray(chassis_xyyaw, dtype=float).copy()
@@ -231,6 +272,8 @@ class Chassis:
         self._yaw = 0.0
         self._tyaw = 0.0
         self._fb_yaw = 0.0
+        self._last = self.ref[:2].copy()
+        self._ahead = 0.0
 
     def update(self, fh: np.ndarray, dt: float, feedback=None) -> np.ndarray:
         """``feedback``: measured chassis (x, y, yaw). A base that keeps moving away from the desired
@@ -247,21 +290,34 @@ class Chassis:
             self.ref[1] + s * trans[0] + c * trans[1],
             self.ref[2] + dyaw,
         ])
-        step = desired[:2] - self.target[:2]
-        # Speed is bounded per body axis of the current target heading: (vx/vx_max)^2 + (vy/vy_max)^2 <= 1.
         c, s = math.cos(self.ref[2] + self._tyaw), math.sin(self.ref[2] + self._tyaw)
-        bx, by = c * step[0] + s * step[1], -s * step[0] + c * step[1]
-        n = math.hypot(bx / (cfg.vx_max * dt), by / (cfg.vy_max * dt))
-        if n > 1.0:
-            step /= n
+        if cfg.lateral:
+            step = desired[:2] - self.target[:2]
+            # Speed is bounded per body axis of the current target heading: (vx/vx_max)^2 + (vy/vy_max)^2 <= 1.
+            bx, by = c * step[0] + s * step[1], -s * step[0] + c * step[1]
+            n = math.hypot(bx / (cfg.vx_max * dt), by / (cfg.vy_max * dt))
+            if n > 1.0:
+                step /= n
+        else:
+            # The operator's walk along their own heading drives the target along its heading, so the
+            # target stays on a path the base can follow; their sideways steps are dropped.
+            self._ahead += float((desired[:2] - self._last) @ (math.cos(desired[2]), math.sin(desired[2])))
+            self._last = desired[:2].copy()
+            move = float(np.clip(self._ahead, -cfg.vx_max * dt, cfg.vx_max * dt))
+            self._ahead -= move
+            step = move * np.array([c, s])
         # Yaw is chased in the unwrapped space too: a wrapped difference would turn the
         # target the short way round once the operator is more than 180° ahead of it.
         self._tyaw += float(np.clip(dyaw - self._tyaw, -cfg.w_max * dt, cfg.w_max * dt))
         self.target = np.array([self.target[0] + step[0], self.target[1] + step[1], 0.0])
         if feedback is not None:
             fb = np.asarray(feedback, dtype=float)
+            if not cfg.lateral:
+                # what lies beside the base it cannot reach: keep only the part along its heading
+                h = np.array([math.cos(fb[2]), math.sin(fb[2])])
+                self.target[:2] = fb[:2] + h * float((self.target[:2] - fb[:2]) @ h)
             self._fb_yaw += wrap_angle(fb[2] - self.ref[2] - self._fb_yaw)
-            self._check_divergence(desired, dyaw, fb, dt)
+            self._check_divergence(desired if cfg.lateral else self.target, dyaw, fb, dt)
             self._tyaw = self._fb_yaw + float(np.clip(self._tyaw - self._fb_yaw, -YAW_LEAD_MAX, YAW_LEAD_MAX))
         self.target[2] = wrap_angle(self.ref[2] + self._tyaw)
         return self.target

@@ -154,11 +154,6 @@ def test_missing_keys(tmp_path):
         load_bringup_config(path, _lookup)
 
 
-def _omni(cfg):
-    params = yaml.safe_load(cfg.params_file.read_text())
-    return params['/**/chassis/scout']['ros__parameters']['is_omni_wheel']
-
-
 @pytest.mark.parametrize('path', CONFIGS, ids=_model)
 def test_teleop_config_resolves(path):
     cfg = load_teleop_config(path, _lookup)
@@ -171,7 +166,7 @@ def test_teleop_config_resolves(path):
     for p in cfg.lookie_teleop:
         merged.update(yaml.safe_load(p.read_text())['/**/lookie_teleop']['ros__parameters'])
     assert 'profile' not in merged
-    assert ('chassis' in merged['body_axes']) == _omni(load_bringup_config(path, _lookup))
+    assert 'chassis' in merged['body_axes']
     assert 'waist_pitch' in merged['body_axes']
     assert len(merged['ee_open']) == len(merged['ee_close'])
 
