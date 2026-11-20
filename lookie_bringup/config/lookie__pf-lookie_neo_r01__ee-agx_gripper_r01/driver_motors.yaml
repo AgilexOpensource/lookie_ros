@@ -25,8 +25,8 @@ head:
     - joint_name: head_joint2
       node_id: 2
       polarity: -1.0
-      lower_limit: -1.57
-      upper_limit: 1.57
+      lower_limit: -1.5708
+      upper_limit: 1.5708
       torque_limit: 6.0
 
 lift:

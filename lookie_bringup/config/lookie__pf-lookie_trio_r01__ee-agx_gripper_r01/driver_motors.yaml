@@ -28,8 +28,8 @@ head:
     - joint_name: head_joint2
       node_id: 2
       polarity: -1.0
-      lower_limit: -1.57
-      upper_limit: 1.57
+      lower_limit: -1.5708
+      upper_limit: 1.5708
       torque_limit: 6.0
 
 fold:
@@ -43,14 +43,14 @@ fold:
       node_id: 1
       polarity: 1.0
       lower_limit: -1.5707963267948966
-      upper_limit: 1.396
+      upper_limit: 1.3962634015954636
       torque_b: 84.0
 
     - joint_name: torso_joint2
       node_id: 2
       polarity: 1.0
       lower_limit: 0.0
-      upper_limit: 2.618
+      upper_limit: 2.75
       torque_b: 84.0
 
     - joint_name: torso_joint3
@@ -63,6 +63,6 @@ fold:
     - joint_name: torso_joint4
       node_id: 4
       polarity: 1.0
-      lower_limit: -1.396
-      upper_limit: 1.396
+      lower_limit: -1.5707963267948966
+      upper_limit: 1.5707963267948966
       torque_b: 30.0
