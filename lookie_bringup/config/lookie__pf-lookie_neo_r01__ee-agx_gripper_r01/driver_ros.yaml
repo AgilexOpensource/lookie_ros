@@ -31,7 +31,7 @@
     pub_rate: 50
     enable_timeout: 5.0
     tcp_offset: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    gripper_default_effort: 1.0
+    gripper_default_effort: 3.0
     control_enabled: true
 
 /**/right_arm/agx_arm_ctrl_single_node:
@@ -45,7 +45,7 @@
     pub_rate: 50
     enable_timeout: 5.0
     tcp_offset: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    gripper_default_effort: 1.0
+    gripper_default_effort: 3.0
     control_enabled: true
 
 /**/chassis/scout:

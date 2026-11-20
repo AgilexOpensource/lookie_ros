@@ -149,18 +149,16 @@ modules:
   left_arm_null:
     type: null_space
     primary: left_arm_pose
-    # posture/initial pulled the stretched elbow at handover back and forth against the joint4 limit
-    preference: manipulability
-    manipulability_rate: 1.0
-    manipulability_weight: 0.1
+    preference: posture
+    reference: initial
+    posture_velocity_scale: 0.1
     task: {level: 1}
   right_arm_null:
     type: null_space
     primary: right_arm_pose
-    # posture/initial pulled the stretched elbow at handover back and forth against the joint4 limit
-    preference: manipulability
-    manipulability_rate: 1.0
-    manipulability_weight: 0.1
+    preference: posture
+    reference: initial
+    posture_velocity_scale: 0.1
     task: {level: 1}
   torso_joint:
     type: joint_target
