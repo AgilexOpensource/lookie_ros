@@ -12,14 +12,17 @@ from launch_ros.actions import Node
 
 def _node(context, *args, **kwargs):
     value = LaunchConfiguration("params_file").perform(context)
-    files = [f.strip() for f in value.split(",") if f.strip()]
+    parameters = [f.strip() for f in value.split(",") if f.strip()]
+    topic = LaunchConfiguration("chassis_cmd_topic").perform(context).strip()
+    if topic:
+        parameters.append({"chassis_cmd_topic": topic})
     return [Node(
         package="lookie_teleop",
         executable="lookie_teleop_node",
         name="lookie_teleop",
         namespace=LaunchConfiguration("namespace"),
         output="screen",
-        parameters=files,
+        parameters=parameters,
     )]
 
 
@@ -29,5 +32,9 @@ def generate_launch_description() -> LaunchDescription:
             "params_file", default_value="",
             description="Comma-separated parameter YAMLs applied in order; empty uses node defaults"),
         DeclareLaunchArgument("namespace", default_value="", description="Node namespace"),
+        DeclareLaunchArgument(
+            "chassis_cmd_topic", default_value="",
+            description="Chassis velocity topic relative to the namespace; empty uses the kstone chassis "
+                        "velocity port (set it when twist_mux arbitrates that port)"),
         OpaqueFunction(function=_node),
     ])

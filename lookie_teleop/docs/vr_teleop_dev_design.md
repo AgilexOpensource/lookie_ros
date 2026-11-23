@@ -105,7 +105,7 @@ Fields used from `/kstone/state`:
 Publishing rules:
 
 - All commands with a header are stamped with **this node's `now()`**; the XR data timestamps are not reused (kstone rejects timestamps older than 0.5 s or in the future).
-- Chassis `cmd_vel`: while Homing, Homed, or while Enabled and the headset is not driving the chassis, published **continuously** at ≥ 10 Hz (with the main loop), with 0 sent when the joysticks are centred; `cmd_vel` is not published while the headset drives the chassis pose (to avoid pre-empting the pose command). The kstone chassis velocity port times out after 0.25 s, so the chassis stops by itself once publishing stops.
+- Chassis `cmd_vel`: published with the main loop while a joystick commands it; after the joysticks return to centre, zeros keep flowing until the measured pose has settled (0.3 s, at most 2 s) and then publishing **stops**, leaving no message from this node on the topic. kstone zeroes its output on command timeout instead of decelerating, so the zero tail has to cover the chassis deceleration; staying quiet when idle keeps another velocity source on the same topic (e.g. navigation, through twist_mux) from being overridden by idle zeros. `cmd_vel` is not published while the headset drives the chassis pose, so the two commands never share the kstone command slot.
 
 ### 2.3 Service calls
 
@@ -161,10 +161,10 @@ stateDiagram-v2
 | State | Publishes targets | Accepted inputs | Description |
 | --- | --- | --- | --- |
 | NotReady | End effectors only | B long press, index trigger | Startup state; the robot's position is unknown, so it must return Home first |
-| Homing | End effectors; chassis `cmd_vel` (joysticks, zero velocity with no input) | B short press, index trigger, joysticks (chassis only) | Arm / waist target publishing is stopped first, then waits for kstone homing to complete; the chassis is not homed, so the joysticks drive its translation and turning as usual (modules held by the kstone Home are not a disable reason); other inputs have no effect |
-| Homed | End effectors; chassis `cmd_vel` (joysticks, zero velocity without input) | A, B, Y, X, index trigger, joysticks (chassis only) | No arm / waist targets are sent, and the Home pose is held for A calibration; the joysticks only control chassis translation and turning, and right joystick y (waist offset) has no effect |
+| Homing | End effectors; chassis `cmd_vel` (joysticks, quiet once the base has settled) | B short press, index trigger, joysticks (chassis only) | Arm / waist target publishing is stopped first, then waits for kstone homing to complete; the chassis is not homed, so the joysticks drive its translation and turning as usual (modules held by the kstone Home are not a disable reason); other inputs have no effect |
+| Homed | End effectors; chassis `cmd_vel` (joysticks, quiet once the base has settled) | A, B, Y, X, index trigger, joysticks (chassis only) | No arm / waist targets are sent, and the Home pose is held for A calibration; the joysticks only control chassis translation and turning, and right joystick y (waist offset) has no effect |
 | Enabled | Yes | All (A ignored) | Contains the per-arm sub-states |
-| Disabled | End effectors only (arms / waist / chassis keep their current targets) | B long press, index trigger | Only stops publishing commands (the enable service is not called); the chassis is sent zero velocity once and then publishing stops; joysticks / grip triggers have no effect, preventing accidental input |
+| Disabled | End effectors only (arms / waist / chassis keep their current targets) | B long press, index trigger | Only stops publishing commands (the enable service is not called); the chassis gets zeros until it has settled, then publishing stops; joysticks / grip triggers have no effect, preventing accidental input |
 
 - The end effectors follow the index trigger in all states (including NotReady, Homing and Disabled), and the end effectors never return Home. The end effector joints are not in `home_modules`, so publishing their joint targets during homing does not conflict with kstone homing.
 
@@ -222,7 +222,7 @@ flowchart LR
     W -- "Yes" --> R["Re-record the chassis reference"] --> H
     W -- "No" --> H{"Both arms engaged and chassis mode (trio)?"}
     H -- "Yes" --> P["Headset drives the chassis pose"]
-    H -- "No" --> Z["Keep sending zero-velocity cmd_vel (≥10 Hz)"]
+    H -- "No" --> Z["No cmd_vel (idle)"]
 ```
 
 ## 6. Frames and mount correction
@@ -417,7 +417,7 @@ sequenceDiagram
     participant T as Teleop
     participant K as kstone
     U->>T: B long press 1 s
-    T->>T: Stop arm/waist/chassis target publishing (end effectors as usual) / chassis zero velocity
+    T->>T: Stop arm/waist/chassis target publishing (end effectors as usual) / chassis zeros until settled
     loop Each M in home_modules
         T->>K: ~/M/home
         K-->>T: accepted request_id=N (queued only)
@@ -451,7 +451,7 @@ sequenceDiagram
 | User | B short press |
 | Motion control | `~/state` timeout > `kstone_timeout_s`; `fault` non-empty; a feedback group not listed in `ee_` / `ignored_` / `arm_` / `torso_` / `chassis_feedback_groups` (e.g. `default`) is stale (`require_fresh`, see below); a required module is disabled; a module is pre-empted by another source (`held_by` non-empty); torso or arm pose feedback is missing; the chassis keeps moving away from the target; Home / service request failure |
 
-Disable action: only stops publishing commands and **does not call the enable service**: arm / waist / chassis pose targets stop being published (kstone holds the last target), and the chassis is sent zero velocity once and then publishing stops; the end effectors still follow the index trigger; only B long press is accepted.
+Disable action: only stops publishing commands and **does not call the enable service**: arm / waist / chassis pose targets stop being published (kstone holds the last target), and the chassis gets zeros until it has settled, then publishing stops; the end effectors still follow the index trigger; only B long press is accepted.
 
 **Stopping both arms (no disable)**: headset transform timeout > `xr_timeout_s`=0.5 s (evaluated on this node's receive time, without using the XR timestamp). Both arms are Held in the same way as a single arm below, and the waist and the headset-driven chassis hold as a consequence (not both arms engaged); the joysticks remain usable. When the headset recovers, the jump reference from before the loss is discarded, so no false jump is reported.
 
@@ -492,7 +492,7 @@ Defaults are taken from `PARAMS` in `lookie_teleop/node.py`; `lookie_bringup/con
 
 | Group | Parameter | Default |
 | --- | --- | --- |
-| Topics | `xr_namespace` / `kstone_namespace` | `/xr_media` (absolute name, shared by XR devices) / `kstone` (relative name, follows the node namespace) |
+| Topics | `xr_namespace` / `kstone_namespace` / `chassis_cmd_topic` | `/xr_media` (absolute name, shared by XR devices) / `kstone` (relative name, follows the node namespace) / empty (the kstone chassis velocity port; set it when twist_mux arbitrates that port) |
 | Axes | `body_axes` (axes the headset may drive, intersected with discover) | `[chassis, waist_x, waist_z, waist_pitch, waist_yaw]` |
 | Rate | `rate_hz` | 50 |
 | Buttons | `long_press_s` / `double_tap_s` / `grip_on` / `grip_off` | 1.0 / 0.4 / 0.6 / 0.4 |

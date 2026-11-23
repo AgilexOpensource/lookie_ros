@@ -663,11 +663,11 @@ def test_stale_chassis_group_sends_zero_and_settles_before_recording():
     from types import SimpleNamespace
     node = pytest.importorskip("lookie_teleop.node")
     sent = []
-    f = SimpleNamespace(cmd_vel_pub=SimpleNamespace(publish=lambda m: None), stick_was_active=False,
-                        stick_settle=Settle(), profile=SimpleNamespace(chassis_velocity=None))
+    f = SimpleNamespace(cmd_vel_pub=SimpleNamespace(publish=lambda m: None), twist_stream=False,
+                        twist_settle=Settle(), fb={}, profile=SimpleNamespace(chassis_velocity=None))
     f._publish_twist = lambda cmd, now: sent.append(tuple(cmd))
     node.TeleopNode._chassis(f, 0.3, 0.0, 0.5, np.eye(4), 0.02, 1.0, "kstone feedback group base stale")
-    assert sent == [(0.0, 0.0, 0.0)] and f.stick_was_active   # stick ignored; reference recorded after recovery
+    assert sent == [(0.0, 0.0, 0.0)] and f.twist_stream   # stick ignored; reference recorded after recovery
 
 
 def test_xr_monitor_timeout_jump_and_reach():
@@ -851,14 +851,68 @@ def test_sticks_drive_the_chassis_while_homing():
         p={"ee_feedback_groups": [], "ignored_feedback_groups": [], "arm_feedback_groups": [],
            "torso_feedback_groups": [], "chassis_feedback_groups": [], "kstone_timeout_s": 0.3,
            "require_fresh": True},
-        kstate=state, kstate_t=1.0, cmd_vel_pub=object(),
+        kstate=state, kstate_t=1.0, cmd_vel_pub=object(), twist_stream=False, twist_settle=Settle(),
+        fb={},
         profile=SimpleNamespace(chassis_velocity=SimpleNamespace(lower=np.full(3, -1.0), upper=np.full(3, 1.0))),
         _health_modules=lambda: ["left_arm_pose"], _group_issues=lambda: {},
         _stick_twist=lambda l, r: (0.3, 0.0, -0.5), _publish_twist=lambda cmd, now: sent.append(list(cmd)))
     fake._kstone_reason = lambda now, **kw: node.TeleopNode._kstone_reason(fake, now, **kw)
+    fake._stream_twist = lambda cmd, now: node.TeleopNode._stream_twist(fake, cmd, now)
     node.TeleopNode._run_homed(fake, None, None, 1.1, homing=True)
     node.TeleopNode._run_homed(fake, None, None, 1.1)      # homed: a held module still stops the base
     assert sent == [[0.3, 0.0, -0.5], [0.0, 0.0, 0.0]]
+
+
+def chassis_stream_node(pytest_mod, np_mod, fb):
+    """A TeleopNode whose chassis velocity stream is real but whose publishing is recorded."""
+    from types import SimpleNamespace
+    node = pytest_mod.importorskip("lookie_teleop.node")
+    sent = []
+
+    fake = SimpleNamespace(
+        cmd_vel_pub=SimpleNamespace(publish=lambda m: None), twist_stream=False, twist_settle=Settle(),
+        fb=fb, dual_active=False, body_mode="chassis", chassis=SimpleNamespace(ref=None),
+        chassis_pose_pub=None,
+        profile=SimpleNamespace(chassis_velocity=SimpleNamespace(lower=np_mod.full(3, -1.0),
+                                                                upper=np_mod.full(3, 1.0))))
+    fake._publish_twist = lambda cmd, now: sent.append(tuple(cmd))
+    fake._record_chassis = lambda fh: None
+    fake._stream_twist = lambda cmd, now: node.TeleopNode._stream_twist(fake, cmd, now)
+    fake._chassis = lambda *a, **kw: node.TeleopNode._chassis(fake, *a, **kw)
+    return fake, sent
+
+
+def test_chassis_velocity_stream_is_quiet_until_commanded():
+    fake, sent = chassis_stream_node(pytest, np, {})
+    for t in (1.0, 1.02, 1.04):
+        fake._chassis(0.0, 0.0, 0.0, np.eye(4), 0.02, t)
+    assert sent == []                       # idle: nothing on the topic, so another source can drive it
+
+
+def test_chassis_velocity_stream_keeps_zeros_until_the_base_stops():
+    fake, sent = chassis_stream_node(pytest, np, {})
+    fake._chassis(0.3, 0.0, 0.5, np.eye(4), 0.02, 1.0)
+    assert sent == [(0.3, 0.0, 0.5)]
+    # released: zeros continue while the base is still coasting (kstone would cut the motion on timeout)
+    fake._chassis(0.0, 0.0, 0.0, np.eye(4), 0.02, 1.02)
+    assert sent == [(0.3, 0.0, 0.5), (0.0, 0.0, 0.0)] and fake.twist_stream
+    # no odometry at all: the tail still ends, capped by Settle.timeout_s (2 s)
+    for i in range(3, 130):
+        fake._chassis(0.0, 0.0, 0.0, np.eye(4), 0.02, 1.0 + i * 0.02)
+    assert fake.twist_stream is False
+    assert len(sent) < 130                  # stopped publishing instead of streaming zeros forever
+
+
+def test_chassis_velocity_stream_ends_once_the_measured_pose_settles():
+    fb = {"chassis": np.eye(4)}
+    fake, sent = chassis_stream_node(pytest, np, fb)
+    fake._chassis(0.3, 0.0, 0.0, np.eye(4), 0.02, 1.0)
+    t = 1.0
+    for _ in range(40):                      # 0.8 s of an unchanged pose: still 0.3 s is enough
+        t += 0.02
+        fake._chassis(0.0, 0.0, 0.0, np.eye(4), 0.02, t)
+    assert fake.twist_stream is False and sent[-1] == (0.0, 0.0, 0.0)
+    assert len(sent) < 41
 
 
 def mon_check_first(issues):

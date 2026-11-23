@@ -60,6 +60,8 @@ PARAMS = {
     "long_press_s": 1.0, "double_tap_s": 0.4, "grip_on": 0.6, "grip_off": 0.4,
     "haptic_long_press": [1.0, 100.0, 2.0, 250.0], "haptic_grip_engage": [1.0, 100.0],
     "deadzone": 0.15, "max_vx": 0.5, "max_vy": 0.5, "max_wz": 1.0,
+    # chassis velocity topic; empty uses the kstone chassis velocity port from the engine config
+    "chassis_cmd_topic": "",
     "joy_z_rate": 0.10, "joy_pitch_rate": 0.3,
     "headset_forward_axis": [1.0, 0.0, 0.0], "mount_max_deg": 35.0, "yaw_warn_deg": 15.0,
     "calib_x": [0.15, 0.70], "calib_z": [-0.6, 0.3], "min_cross": 0.10, "max_side": 0.20,
@@ -195,7 +197,8 @@ class TeleopNode(Node):
         self._waist_fh_inv = None                     # F_h at the waist x reference, inverted
         self.chassis = Chassis(self.chassis_cfg)
         self.dual_active = False
-        self.stick_was_active = False
+        self.twist_stream = False                     # a chassis velocity command is being published
+        self.twist_settle = Settle()                  # after the command ends: wait for the base to stop
         self.group_holds = {}                         # part -> reason its kstone feedback group is stale
         self.home = None
 
@@ -302,7 +305,8 @@ class TeleopNode(Node):
         for mid, port in profile.pose_ports.items():
             self.pose_pubs[mid] = (self.create_publisher(PoseStamped, port.topic, 10), port.ros_frame)
         if profile.chassis_velocity is not None:
-            self.cmd_vel_pub = self.create_publisher(Twist, profile.chassis_velocity.topic, 10)
+            topic = self.p["chassis_cmd_topic"].strip() or profile.chassis_velocity.topic
+            self.cmd_vel_pub = self.create_publisher(Twist, topic, 10)
         self.chassis = Chassis(replace(self.chassis_cfg, lateral=profile.holonomic))
         if profile.has("chassis"):
             self.chassis_pose_pub = self.create_publisher(PoseStamped, profile.chassis_pose_topic, 10)
@@ -489,6 +493,8 @@ class TeleopNode(Node):
                 self._run_enabled(left, right, now, dt)
             elif self.state == HOMED:
                 self._run_homed(left, right, now)
+            else:
+                self._stream_twist((0.0, 0.0, 0.0), now)   # disabled: run out a stop, then go quiet
             self._end_effectors(left, right, now)
         if now - self._last_status >= 0.1:
             self._last_status = now
@@ -648,8 +654,8 @@ class TeleopNode(Node):
         self.arm_faults = {}
         self.catch_aborts = {}
         self.dual_active = False
-        self.stick_was_active = False
-        self.stick_settle = Settle()
+        self.twist_stream = False
+        self.twist_settle = Settle()
         self.group_holds = {}
         self.state = ENABLED
         self.reason = ""
@@ -669,7 +675,8 @@ class TeleopNode(Node):
         self._record_chassis(fa)
 
     def _halt(self):
-        """Stop publishing arm/torso/chassis commands; one zero Twist; end effectors simply stop being sent."""
+        """Stop publishing arm/torso commands; the chassis gets zeros until it has settled; end effectors
+        simply stop being sent."""
         for s in SIDES:
             self.arms[s] = Arm()
             self.grip_tap[s].reset()
@@ -679,6 +686,8 @@ class TeleopNode(Node):
         self.clamped = set()
         self.group_holds = {}
         if self.cmd_vel_pub is not None:
+            self.twist_stream = True
+            self.twist_settle.reset(self._now())
             self.cmd_vel_pub.publish(Twist())
 
     def _disable(self, reason):
@@ -809,7 +818,7 @@ class TeleopNode(Node):
                 and "chassis" not in self._group_issues()):
             lim = self.profile.chassis_velocity
             cmd = np.clip(self._stick_twist(left, right), lim.lower, lim.upper)
-        self._publish_twist(cmd, now)
+        self._stream_twist(cmd, now)
 
     def _stop_arm(self, side, reason):
         """Controller loss stops only that arm: hold its pose, require a fresh double-tap later."""
@@ -911,7 +920,7 @@ class TeleopNode(Node):
             self._publish_pose(ARM_MODULES[s], pos, quat)
 
     def _chassis(self, vx, vy, wz, fh, dt, now, stale=None):
-        """Stick has priority; else headset pose (chassis axis, both arms active, chassis mode); else zero Twist.
+        """Stick has priority; else headset pose (chassis axis, both arms active, chassis mode); else nothing.
 
         ``stale``: the chassis feedback group is stale, so only a zero Twist is sent and the headset
         reference is recorded again once it recovers.
@@ -919,23 +928,16 @@ class TeleopNode(Node):
         if self.cmd_vel_pub is None:
             return
         if stale is not None:
-            self.stick_was_active = True   # on recovery: settle, then record a fresh reference
-            self.stick_settle.reset(now)
+            self.twist_stream = True   # on recovery: settle, then record a fresh reference
+            self.twist_settle.reset(now)
             self._publish_twist((0.0, 0.0, 0.0), now)
             return
         lim = self.profile.chassis_velocity
         cmd = np.clip([vx, vy, wz], lim.lower, lim.upper)
         if np.any(cmd != 0.0):
-            self.stick_was_active = True
-            self.stick_settle.reset(now)
-            self._publish_twist(cmd, now)
+            self._stream_twist(cmd, now)
             return
-        if self.stick_was_active:
-            fb = self.fb.get("chassis")
-            if not self.stick_settle.update(planar(fb) if fb is not None else None, now):
-                self._publish_twist((0.0, 0.0, 0.0), now)   # let the base coast to a stop first
-                return
-            self.stick_was_active = False
+        if self._stream_twist((0.0, 0.0, 0.0), now):   # stopped: the headset reference follows from here
             self._record_chassis(fh)
         if (self.dual_active and self.body_mode == "chassis" and self.chassis.ref is not None
                 and self.chassis_pose_pub is not None):
@@ -948,8 +950,28 @@ class TeleopNode(Node):
             msg.pose.position.x, msg.pose.position.y = float(x), float(y)
             msg.pose.orientation.w, msg.pose.orientation.z = math.cos(yaw / 2.0), math.sin(yaw / 2.0)
             self.chassis_pose_pub.publish(msg)
-            return
-        self._publish_twist((0.0, 0.0, 0.0), now)
+
+    def _stream_twist(self, cmd, now):
+        """Publish a chassis velocity only while it matters; True once the base has settled after a command.
+
+        A non-zero command always publishes. When the command falls to zero, zeros keep flowing until the
+        measured pose has stopped moving, then the stream goes quiet: kstone drops its motion on command
+        timeout instead of decelerating, so the zero tail has to cover the base's deceleration, and idle
+        zeros would override any other velocity source on the same topic.
+        """
+        if any(cmd):
+            self.twist_stream = True
+            self.twist_settle.reset(now)
+            self._publish_twist(cmd, now)
+            return False
+        if not self.twist_stream:
+            return False
+        fb = self.fb.get("chassis")
+        if not self.twist_settle.update(planar(fb) if fb is not None else None, now):
+            self._publish_twist((0.0, 0.0, 0.0), now)   # let the base coast to a stop first
+            return False
+        self.twist_stream = False
+        return True
 
     def _publish_twist(self, cmd, now):
         msg = Twist()
