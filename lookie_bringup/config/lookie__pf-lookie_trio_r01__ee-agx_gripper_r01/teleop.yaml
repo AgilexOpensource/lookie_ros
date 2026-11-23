@@ -6,7 +6,9 @@
     lean_pivot_m: 0.27  # last waist pitch axis -> chest_link (URDF, neo 0.269 / trio 0.2705)
 
     # Parallel gripper: joint value is the opening width in m (0 closed, 0.1 fully open); main trigger 0 -> ee_open, 1 -> ee_close.
-    controller_tcp: [0.06, 0.0, 0.0, 0.0, 0.5236, 0.0]   # right controller frame, left mirrored: 6 cm ahead, then pitched 30° about +y -> l/r_gripper_tip
+    # xyz is given in the rotated TCP frame (rotate by rpy, then offset along the rotated axes): the gripper tip
+    # sits 5.5 cm ahead along the button-face plane and 3 cm along the panel normal
+    controller_tcp: [0.055, 0.0, 0.03, 0.0, 0.5236, 0.0]   # right controller frame, left mirrored -> l/r_gripper_tip
     ee_modules: [left_gripper_joint, right_gripper_joint]
     ee_feedback_groups: [left_gripper, right_gripper]   # kstone feedback groups whose loss only stops that gripper
     trigger_deadzone: 0.05

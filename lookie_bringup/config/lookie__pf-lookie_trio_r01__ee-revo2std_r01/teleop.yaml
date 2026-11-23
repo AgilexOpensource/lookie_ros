@@ -7,7 +7,9 @@
 
     # Revo2 dexterous hands: main trigger 0 -> ee_open, 1 -> ee_close (linear).
     # Joint names and limits come from kstone discover unless ee_joints_* / ee_lower / ee_upper are set.
-    controller_tcp: [0.0, 0.05, 0.0, 0.0, 0.5236, 0.0]   # right controller frame, left mirrored: 5 cm inward, then pitched 30° about +y -> l/r_palm
+    # xyz is given in the rotated TCP frame: 5 cm inward lies on the pitch axis, so the 30° rotation does not
+    # move the palm point
+    controller_tcp: [0.0, 0.05, 0.0, 0.0, 0.5236, 0.0]   # right controller frame, left mirrored -> l/r_palm
     ee_modules: [left_hand_joint, right_hand_joint]
     trigger_deadzone: 0.05
     ee_open: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
