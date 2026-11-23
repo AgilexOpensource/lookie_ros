@@ -7,7 +7,7 @@
   ros__parameters:
     topics:
       teleop:
-        topic: teleop/cmd_vel
+        topic: lookie_teleop/cmd_vel
         # s without a message before this source is considered gone. Keep it short: while it lasts the mux
         # repeats the last command, and kstone adds its own 0.25 s lease on top, so a dead source keeps the
         # base moving for timeout + 0.25 s.

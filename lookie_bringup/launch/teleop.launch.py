@@ -2,7 +2,7 @@
 
 kstone_ros is not started here; launch it separately before teleoperating. twist_mux arbitrates the
 chassis velocity input of kstone (config/twist_mux.yaml lists the sources), so lookie_teleop publishes on
-teleop/cmd_vel instead of writing to the kstone chassis port directly.
+lookie_teleop/cmd_vel instead of writing to the kstone chassis port directly.
 """
 
 from pathlib import Path
@@ -18,7 +18,7 @@ from lookie_bringup.launch_utils import arg, common_arguments, include, resolve_
 
 # Source topic of lookie_teleop and the kstone chassis velocity port it reaches through twist_mux; both
 # are relative to the robot namespace.
-TELEOP_CMD_VEL = 'teleop/cmd_vel'
+TELEOP_CMD_VEL = 'lookie_teleop/cmd_vel'
 KSTONE_CHASSIS_CMD_VEL = 'kstone/chassis/control/cmd_vel'
 
 
