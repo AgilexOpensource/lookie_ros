@@ -143,10 +143,16 @@ def test_calibration_maps_orientation_absolutely_to_home():
         np.testing.assert_allclose(rot0, ee[s][:3, :3], atol=1e-9)
 
 
-def test_controller_tcp_offsets_the_point_before_rotating():
-    t = tcp_transform([0.06, 0.0, 0.0, 0.0, math.radians(30.0), 0.0], "left")
-    np.testing.assert_allclose(t[:3, 3], [0.06, 0.0, 0.0])
-    np.testing.assert_allclose(t[:3, :3], rpy_to_matrix(0.0, math.radians(30.0), 0.0), atol=1e-12)
+def test_controller_tcp_offset_is_carried_by_the_rpy_rotation():
+    """xyz is measured in the rotated frame, so a pitched TCP puts the point where the pitched tool points:
+    5.5 cm along a 30 deg pitched +x plus 3 cm along that frame's +z is 6.26 cm ahead and 1.5 mm below the
+    controller origin, not 5.5 cm ahead / 3 cm up."""
+    pitch = math.radians(30.0)
+    t = tcp_transform([0.055, 0.0, 0.03, 0.0, pitch, 0.0], "left")
+    np.testing.assert_allclose(t[:3, :3], rpy_to_matrix(0.0, pitch, 0.0), atol=1e-12)
+    np.testing.assert_allclose(
+        t[:3, 3], [0.055 * math.cos(pitch) + 0.03 * math.sin(pitch), 0.0,
+                   -0.055 * math.sin(pitch) + 0.03 * math.cos(pitch)], atol=1e-12)
 
 
 def test_calibration_spacing_mismatch_only_warns_and_keeps_hand_spacing():
@@ -1124,9 +1130,9 @@ def test_controller_tcp_is_mirrored_for_the_left_controller():
     """+y is inward on both sides: the right controller takes the offset as given, the left its mirror."""
     offset = [0.05, 0.05, 0.07, 0.1, 0.2, 0.3]
     right, left = tcp_transform(offset, "right"), tcp_transform(offset, "left")
-    np.testing.assert_allclose(right[:3, 3], [0.05, 0.05, 0.07])
-    np.testing.assert_allclose(left[:3, 3], [0.05, -0.05, 0.07])
     mirror = np.diag([1.0, -1.0, 1.0])
+    np.testing.assert_allclose(right[:3, 3], right[:3, :3] @ [0.05, 0.05, 0.07], atol=1e-12)
+    np.testing.assert_allclose(left[:3, 3], mirror @ right[:3, 3], atol=1e-12)
     np.testing.assert_allclose(left[:3, :3], mirror @ right[:3, :3] @ mirror, atol=1e-12)
 
 

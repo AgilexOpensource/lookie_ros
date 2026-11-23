@@ -58,13 +58,19 @@ def heading_frame(position, yaw: float) -> np.ndarray:
 def tcp_transform(offset, side: str = "right") -> np.ndarray:
     """Controller TCP offset [x, y, z, roll, pitch, yaw] in the controller frame (+X pointing, +Y left, +Z up),
     given for the right controller, where +y is inward (towards the palm); the left controller uses its mirror
-    image about the controller XZ plane (y, roll and yaw negated), so +y is inward on both sides."""
+    image about the controller XZ plane (y, roll and yaw negated), so +y is inward on both sides.
+
+    xyz is given in the rotated (TCP) frame, i.e. ``T = R_rpy . Translate(xyz)``: the frame is rotated by rpy and
+    the point then lies xyz along the rotated axes. This departs from the robot-industry ``T = [R_rpy | xyz]``
+    convention, where xyz is along the controller axes; it is used here so the per-end-effector numbers can be
+    written as they are measured against the tool (ahead along the tool, up along its axis). The tip therefore
+    moves with rpy."""
     o = np.zeros(6) if offset is None else np.array(offset, dtype=float)
     if side == "left":
         o[[1, 3, 5]] *= -1.0
     t = np.eye(4)
     t[:3, :3] = rpy_to_matrix(o[3], o[4], o[5])
-    t[:3, 3] = o[:3]
+    t[:3, 3] = t[:3, :3] @ o[:3]
     return t
 
 

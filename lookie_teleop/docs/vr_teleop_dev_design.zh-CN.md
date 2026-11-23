@@ -501,7 +501,7 @@ Quest 长按 Home 键重新居中会重置 `local-floor` 参考空间：同一�
 | 摇杆腰偏置 | `joy_z_rate` / `joy_pitch_rate` | 0.10 m/s / 0.3 rad/s |
 | 挂载 | `headset_forward_axis` / `mount_max_deg` / `yaw_warn_deg` | `[1,0,0]` / 35 / 15 |
 | 校准 | `calib_x` / `calib_z` / `min_cross` / `max_side` / `spacing_tol`（仅警告） | `[0.15,0.70]` / `[-0.60,0.30]` / 0.10 / 0.20 / 0.10 |
-| 映射 | `R_body_to_torso`（rpy） / `controller_tcp`（xyz + rpy） | `[0,0,0]` / 全 0（common.yaml），按末端在 teleop.yaml 中设置。**始终以右手柄为参考**给出（+X 指向前方，+Y 朝内即掌心方向，+Z 向上；由 xr_media 从 WebXR grip pose 转换，原点在弯曲手指的中心），左手柄取镜像（y、roll、yaw 取反）。先按 xyz 平移，再绕该点按 rpy 旋转；旋转后的 TCP 系水平朝前即对应末端 Home 姿态。夹爪：`[0.06,0,0,0,0.5236,0]`（前 6 cm，pitch 30°）→ `*_gripper_tip`；Revo2 灵巧手：`[0,0.05,0,0,0.5236,0]`（朝内 5 cm，pitch 30°）→ `*_palm`（URDF 中手轴线上 +0.07 m）。§8.1 |
+| 映射 | `R_body_to_torso`（rpy） / `controller_tcp`（xyz + rpy） | `[0,0,0]` / 全 0（common.yaml），按末端在 teleop.yaml 中设置。**始终以右手柄为参考**给出（+X 指向前方，+Y 朝内即掌心方向，+Z 向上；由 xr_media 从 WebXR grip pose 转换，原点在弯曲手指的中心），左手柄取镜像（y、roll、yaw 取反）。xyz 在**旋转后**的系中给出：先按 rpy 旋转，点再沿旋转后的轴偏移 $T=R_y\cdot\text{Translate}(xyz)$（**不是**工业惯例的 $T=[R|xyz]$，故 rpy 变化时该点随之移动）；旋转后的 TCP 系水平朝前即对应末端 Home 姿态。夹爪：`[0.055,0,0.03,0,0.5236,0]`（沿按键面板平面内前方 5.5 cm，再沿面板法线 3 cm，pitch 30°）→ `*_gripper_tip`；Revo2 灵巧手：`[0,0.05,0,0,0.5236,0]`（朝内 5 cm，位于 pitch 转轴上，旋转不改变其位置，pitch 30°）→ `*_palm`（URDF 中手轴线上 +0.07 m）。§8.1 |
 | 映射 | `lean_pivot_m` | 0（neo、trio：0.27，§8.1、§8.2） |
 | 腰 | `k_x` / `k_z` / `k_pitch` | 1.0 / 1.0 / 1.0 |
 | 腰 Z 范围（相对 A） | `waist_z_range` | `[-0.8, 0.15]` |

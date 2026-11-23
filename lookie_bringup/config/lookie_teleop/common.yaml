@@ -36,9 +36,10 @@
     # mapping
     R_body_to_torso: [0.0, 0.0, 0.0]    # rpy
     # controller_tcp: xyz (m) + rpy (rad), always given for the RIGHT controller (+x pointing, +y inward towards the
-    # palm, +z up): the point is offset first, then the frame rotated about it; the left controller uses its mirror
-    # image (y, roll, yaw negated). Its orientation, level and along the body heading, maps to the arm's Home
-    # orientation. Set per end effector in teleop.yaml.
+    # palm, +z up): the frame is rotated by rpy and the point then lies xyz along the rotated axes (T = R . Translate,
+    # not the robot-industry T = [R | xyz]); the left controller uses its mirror image (y, roll, yaw negated). Its
+    # orientation, level and along the body heading, maps to the arm's Home orientation. Set per end effector in
+    # teleop.yaml.
     controller_tcp: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     # arm orientation is absolute: controller_tcp level and forward <-> the end-effector Home orientation
 
