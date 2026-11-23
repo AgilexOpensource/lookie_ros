@@ -72,12 +72,12 @@ modules:
       command_timeout_s: 0.25
       kinematics: differential
       base_frame: chassis_base_link
-      max_linear_velocity: 0.5  # real-robot cap, kept
-      max_angular_velocity: 1.0
-      max_linear_acceleration: 0.6
-      max_linear_deceleration: 1.0
-      max_angular_acceleration: 0.65
-      max_angular_deceleration: 0.65
+      max_linear_velocity: 1.0  # measured reachable on the robot (odom 1.00 m/s, 1.99 rad/s)
+      max_angular_velocity: 2.0
+      max_linear_acceleration: 1.0
+      max_linear_deceleration: 1.5
+      max_angular_acceleration: 1.5
+      max_angular_deceleration: 1.5
       position_tolerance: 0.01
       orientation_tolerance: 0.017
     # period_s: 0.02  # engine dt replaces it

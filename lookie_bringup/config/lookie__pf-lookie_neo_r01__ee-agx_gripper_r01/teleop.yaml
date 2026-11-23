@@ -6,6 +6,10 @@
     # also -> chassis pose target (differential base: no sideways). The arm targets are in the base frame, so the arms cover the slow lift.
     body_axes: [chassis, waist_z, waist_pitch]
     lean_pivot_m: 0.27  # last waist pitch axis -> chest_link (URDF, neo 0.269 / trio 0.2705)
+    # Sticks: use the chassis limits this model allows (kstone caps at 1.0 m/s / 2.0 rad/s); common.yaml stays
+    # at the slower shared values so the Trio keeps its previous stick response.
+    max_vx: 1.0
+    max_wz: 2.0
 
     # Waist in joint space (kstone joint_targets torso_lift_joint / torso_pitch_joint, no torso_pose):
     # headset height (+ right stick in z mode) -> torso_joint1, lean -> torso_joint2.
