@@ -114,9 +114,11 @@ kstone:
 ros2 launch lookie_bringup teleop.launch.py
 ```
 
-启动 `xr_media_ros`（只有 XR 卡片，不配置 media）与 `lookie_teleop`，不启动 `kstone_ros`，需先用 `kstone.launch.py` 启动。
+启动 `xr_media_ros`（只有 XR 卡片，不配置 media）、`lookie_teleop` 和 `twist_mux`，不启动 `kstone_ros`，需先用 `kstone.launch.py` 启动。
 
-参数：`model`、`config`、`namespace`（同上），`xr`、`teleop`（默认 `true`，`false` 时不启动对应节点）。
+`twist_mux` 位于 kstone 的底盘速度入口之前：遥操作发布到 `teleop/cmd_vel`，由它转发到 `kstone/chassis/control/cmd_vel`。各速度源及其优先级、超时在 `config/twist_mux.yaml`，加一路源只需在那里加一项。遥操作空闲时不发零速，所以话题上没有活跃速度源时，其他源不会被零速压住。未安装 `twist_mux` 时打警告并回退为遥操作直接写 kstone 的底盘入口（`mux:=false` 同样如此）。
+
+参数：`model`、`config`、`namespace`（同上），`xr`、`teleop`、`mux`（默认 `true`，`false` 时不启动对应节点）。
 
 `bringup.yaml` 的 `teleop` 段先指定 `config/xr_media_ros/` 与 `config/lookie_teleop/` 下的共用文件，再指定本机型的 `teleop.yaml`：
 

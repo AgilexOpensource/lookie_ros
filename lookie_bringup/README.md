@@ -114,9 +114,11 @@ To add a model or a URDF revision, add the URDF to `lookie_description` and a ne
 ros2 launch lookie_bringup teleop.launch.py
 ```
 
-This starts `xr_media_ros` (XR card only, no media) and `lookie_teleop`. It does not start `kstone_ros`; start it with `kstone.launch.py` first.
+This starts `xr_media_ros` (XR card only, no media), `lookie_teleop` and `twist_mux`. It does not start `kstone_ros`; start it with `kstone.launch.py` first.
 
-Arguments: `model`, `config`, `namespace` (same as above), `xr` and `teleop` (default `true`; `false` skips that node).
+`twist_mux` sits in front of the kstone chassis velocity input: teleop publishes on `teleop/cmd_vel` and the mux forwards it to `kstone/chassis/control/cmd_vel`. Sources, priorities and timeouts are listed in `config/twist_mux.yaml`; adding a source is one entry there. Teleop is quiet when idle, so it does not hold the topic with zeros and block another source. Without `twist_mux` installed, a warning is logged and teleop writes the kstone chassis input directly (`mux:=false` does the same).
+
+Arguments: `model`, `config`, `namespace` (same as above), `xr`, `teleop` and `mux` (default `true`; `false` skips that node).
 
 The `teleop` section of `bringup.yaml` selects the shared files under `config/xr_media_ros/` and `config/lookie_teleop/`, then `teleop.yaml` of the model:
 

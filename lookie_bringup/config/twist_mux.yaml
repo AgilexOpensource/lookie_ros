@@ -1,0 +1,12 @@
+# Chassis velocity arbitration in front of kstone's chassis velocity port.
+#
+# Every source publishes Twist on its own topic; twist_mux forwards the highest-priority live one, so a
+# source that stops publishing hands the chassis back instead of holding it. Add a source by adding an
+# entry; priorities are only compared while a source is live (has published within its timeout).
+/**/twist_mux:
+  ros__parameters:
+    topics:
+      teleop:
+        topic: teleop/cmd_vel
+        timeout: 0.5      # s without a message before this source is considered gone
+        priority: 100

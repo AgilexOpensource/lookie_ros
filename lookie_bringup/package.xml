@@ -17,6 +17,7 @@
   <exec_depend>lookie_description</exec_depend>
   <exec_depend>xr_media_ros</exec_depend>
   <exec_depend>lookie_teleop</exec_depend>
+  <exec_depend>twist_mux</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
 

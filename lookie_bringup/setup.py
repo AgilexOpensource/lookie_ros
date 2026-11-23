@@ -14,6 +14,7 @@ setup(
         ("share/" + package_name, ["package.xml"]),
         (os.path.join("share", package_name, "launch"), glob("launch/*.py")),
         (os.path.join("lib", package_name), ["scripts/can_bind.sh"]),
+        (os.path.join("share", package_name, "config"), glob("config/*.yaml")),
         *[(os.path.join("share", package_name, d.rstrip("/")), glob(os.path.join(d, "*.yaml")))
           for d in sorted(glob("config/*/"))],
     ],
