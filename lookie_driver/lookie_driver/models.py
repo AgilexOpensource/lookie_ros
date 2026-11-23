@@ -9,7 +9,8 @@ from lookie_driver.layout import CHASSIS_NAMESPACE, HEAD_MODULE, module_namespac
 
 # Params file keys; wildcards match any namespace prefix (e.g. /trio/driver).
 NODE = '/**/{key}_node'
-CHASSIS_NODE = f'/**/{CHASSIS_NAMESPACE}/scout'
+# The chassis section is keyed by its driver package, e.g. /**/chassis/lookie_trio_base.
+CHASSIS_PREFIX = f'/**/{CHASSIS_NAMESPACE}/'
 
 # Joint limits in driver YAML may be tighter than URDF, never wider.
 LIMIT_TOLERANCE = 1e-4
@@ -20,6 +21,21 @@ def _load_yaml(path) -> dict:
     if not isinstance(data, dict):
         raise ValueError(f'{path}: expected a mapping at top level')
     return data
+
+
+def chassis_packages(params: dict) -> list:
+    """Chassis driver packages named by the params file chassis sections."""
+    return sorted(k[len(CHASSIS_PREFIX):] for k in params
+                  if k.startswith(CHASSIS_PREFIX) and '/' not in k[len(CHASSIS_PREFIX):])
+
+
+def chassis_package(params_file) -> str:
+    """Driver package of the single chassis section in the params file."""
+    packages = chassis_packages(_load_yaml(params_file))
+    if len(packages) != 1:
+        raise ValueError(
+            f'{params_file}: expected one {CHASSIS_PREFIX}<package> section, got {packages}')
+    return packages[0]
 
 
 def actuated_urdf_joints(urdf_path) -> dict:
@@ -129,9 +145,12 @@ def validate(robot_yaml, params_file, bridge_config, urdf_path=None) -> None:
                 f'{bridge_config}: module {module!r} namespace {bridge_ns.get(module)!r} != {ns!r}')
 
     params = _load_yaml(params_file)
-    for node in (NODE.format(key=HEAD_MODULE), NODE.format(key=torso), CHASSIS_NODE):
+    for node in (NODE.format(key=HEAD_MODULE), NODE.format(key=torso)):
         if node not in params:
             errors.append(f'{params_file}: missing {node} section')
+    chassis = chassis_packages(params)
+    if len(chassis) != 1:
+        errors.append(f'{params_file}: expected one {CHASSIS_PREFIX}<package> section, got {chassis}')
 
     if errors:
         raise ValueError('Driver config mismatch:\n  ' + '\n  '.join(errors))

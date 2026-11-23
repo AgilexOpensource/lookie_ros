@@ -16,11 +16,15 @@ repositories:
     type: git
     url: https://github.com/agilexrobotics/agx_arm_ros.git
     version: ros2
-  # Scout Mini chassis driver.
-  scout_ros2:
+  # Chassis drivers (Neo differential, Trio omnidirectional).
+  lookie_neo_base:
     type: git
-    url: https://github.com/AgilexOpensource/scout_ros2.git
-    version: humble
+    url: https://github.com/AgilexOpensource/lookie_neo_base.git
+    version: main
+  lookie_trio_base:
+    type: git
+    url: https://github.com/AgilexOpensource/lookie_trio_base.git
+    version: main
   ugv_sdk:
     type: git
     url: https://github.com/westonrobot/ugv_sdk.git

@@ -23,7 +23,7 @@ Dependency repositories are cloned next to this one with [vcstool](https://githu
 | [kstone_ros](https://github.com/AgilexOpensource/kstone_ros) | ROS 2 node for kstone | lookie_control |
 | [lookie_description](https://github.com/AgilexOpensource/lookie_description) | URDF, meshes and RViz display | lookie_control, lookie_bringup |
 | [xr_media_ros](https://github.com/AgilexOpensource/xr_media_ros) | XR headset tracking and media streaming | lookie_teleop |
-| [head_ros](https://github.com/AgilexOpensource/head_ros), [lift_ros](https://github.com/AgilexOpensource/lift_ros), [fold_ros](https://github.com/AgilexOpensource/fold_ros), [agx_arm_ros](https://github.com/agilexrobotics/agx_arm_ros/tree/ros2), [scout_ros2](https://github.com/AgilexOpensource/scout_ros2/tree/humble), [ugv_sdk](https://github.com/westonrobot/ugv_sdk) | Head, torso, arm and chassis drivers | lookie_driver |
+| [head_ros](https://github.com/AgilexOpensource/head_ros), [lift_ros](https://github.com/AgilexOpensource/lift_ros), [fold_ros](https://github.com/AgilexOpensource/fold_ros), [agx_arm_ros](https://github.com/agilexrobotics/agx_arm_ros/tree/ros2), [lookie_neo_base](https://github.com/AgilexOpensource/lookie_neo_base), [lookie_trio_base](https://github.com/AgilexOpensource/lookie_trio_base), [ugv_sdk](https://github.com/westonrobot/ugv_sdk) | Head, torso, arm and chassis drivers | lookie_driver |
 
 ## Requirements
 

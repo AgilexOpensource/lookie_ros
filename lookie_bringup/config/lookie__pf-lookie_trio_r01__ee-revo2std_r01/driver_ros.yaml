@@ -49,11 +49,8 @@
     gripper_default_effort: 1.0
     control_enabled: true
 
-/**/chassis/scout:
+/**/chassis/lookie_trio_base:
   ros__parameters:
     port_name: can_chassis
-    is_scout_mini: true
-    is_omni_wheel: true
-    odom_topic_name: odom
     cmd_velocity_signs: [1, -1, 1]    # [x, y, wz]; positive linear.y drove this base to its right
     odom_velocity_signs: [-1, 1, 1]   # [x, y, wz]; longitudinal feedback was reversed

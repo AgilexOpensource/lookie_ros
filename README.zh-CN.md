@@ -23,7 +23,7 @@ Lookie 机器人（Trio 和 Neo）的 ROS 2 功能包：驱动、基于 kstone �
 | [kstone_ros](https://github.com/AgilexOpensource/kstone_ros) | kstone 的 ROS 2 节点 | lookie_control |
 | [lookie_description](https://github.com/AgilexOpensource/lookie_description) | URDF、网格和 RViz 显示 | lookie_control、lookie_bringup |
 | [xr_media_ros](https://github.com/AgilexOpensource/xr_media_ros) | XR 头显追踪和媒体流 | lookie_teleop |
-| [head_ros](https://github.com/AgilexOpensource/head_ros)、[lift_ros](https://github.com/AgilexOpensource/lift_ros)、[fold_ros](https://github.com/AgilexOpensource/fold_ros)、[agx_arm_ros](https://github.com/agilexrobotics/agx_arm_ros/tree/ros2)、[scout_ros2](https://github.com/AgilexOpensource/scout_ros2/tree/humble)、[ugv_sdk](https://github.com/westonrobot/ugv_sdk) | 头部、躯干、机械臂和底盘驱动 | lookie_driver |
+| [head_ros](https://github.com/AgilexOpensource/head_ros)、[lift_ros](https://github.com/AgilexOpensource/lift_ros)、[fold_ros](https://github.com/AgilexOpensource/fold_ros)、[agx_arm_ros](https://github.com/agilexrobotics/agx_arm_ros/tree/ros2)、[lookie_neo_base](https://github.com/AgilexOpensource/lookie_neo_base)、[lookie_trio_base](https://github.com/AgilexOpensource/lookie_trio_base)、[ugv_sdk](https://github.com/westonrobot/ugv_sdk) | 头部、躯干、机械臂和底盘驱动 | lookie_driver |
 
 ## 环境要求
 

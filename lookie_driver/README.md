@@ -14,14 +14,15 @@ Follow the [install guide](../docs/install.md) with [lookie_driver.repos](lookie
 | lift_ros | [lift_ros](https://github.com/AgilexOpensource/lift_ros): lift column and waist pitch (Neo) |
 | fold_ros | [fold_ros](https://github.com/AgilexOpensource/fold_ros): 4-DOF fold module (Trio) |
 | agx_arm_ctrl | [agx_arm_ros](https://github.com/agilexrobotics/agx_arm_ros/tree/ros2): AgileX arms |
-| scout_base | [scout_ros2](https://github.com/AgilexOpensource/scout_ros2/tree/humble) and [ugv_sdk](https://github.com/westonrobot/ugv_sdk): Scout Mini chassis |
+| lookie_neo_base | [lookie_neo_base](https://github.com/AgilexOpensource/lookie_neo_base) and [ugv_sdk](https://github.com/westonrobot/ugv_sdk): differential chassis (Neo) |
+| lookie_trio_base | [lookie_trio_base](https://github.com/AgilexOpensource/lookie_trio_base) and [ugv_sdk](https://github.com/westonrobot/ugv_sdk): omnidirectional chassis (Trio) |
 
 ## Models
 
 | Platform | Torso | Chassis | Models (`ee-agx_gripper_r01` / `ee-revo2std_r01`) |
 | --- | --- | --- | --- |
-| Neo | lift_ros | Scout Mini, differential | `lookie__pf-lookie_neo_r01__ee-<ee>` |
-| Trio | fold_ros | Scout Mini, omni wheel | `lookie__pf-lookie_trio_r01__ee-<ee>` |
+| Neo | lift_ros | lookie_neo_base, differential | `lookie__pf-lookie_neo_r01__ee-<ee>` |
+| Trio | fold_ros | lookie_trio_base, omni wheel | `lookie__pf-lookie_trio_r01__ee-<ee>` |
 
 This package holds no model list or config files. Each model's driver configs live in [lookie_bringup](../lookie_bringup/README.md#configuration) `config/<model>/`. The torso driver comes from the top-level key of the motors YAML other than `head`: `lift` starts `lift_ros`, `fold` starts `fold_ros`.
 
@@ -72,7 +73,7 @@ The files are checked against each other and the URDF before any node starts.
 
 With `trio`, the joint bridge merges module joint states into `/trio/driver/feedback/joint_states` and accepts commands on `/trio/driver/control/joint_states`. Joint names follow the Lookie URDF; Revo2 mimic joints (`*_distal`) are not bridged.
 
-The chassis node `/trio/driver/chassis/scout` subscribes to `cmd_vel` and publishes `odom`, `scout_status` and `rc_status` under `/trio/driver/chassis`. It broadcasts TF `trio/odom` → `trio/base_footprint`.
+The chassis node runs in `/trio/driver/chassis`. Its package is the one named by the `/**/chassis/<package>` section of `driver_ros.yaml`: [lookie_neo_base](https://github.com/AgilexOpensource/lookie_neo_base) on Neo, [lookie_trio_base](https://github.com/AgilexOpensource/lookie_trio_base) on Trio. It subscribes to `cmd_vel`, publishes `odom`, `battery_state` and `rc/joy` (plus `/diagnostics`), and broadcasts TF `trio/odom` → `trio/base_footprint`. The velocity signs and other chassis parameters are described in each package README.
 
 ## Configuration
 

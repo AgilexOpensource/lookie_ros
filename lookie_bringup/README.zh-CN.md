@@ -61,7 +61,7 @@ ros2 launch lookie_bringup lookie.launch.py sim:=true rviz:=true fixed_frame:=ba
 | 部分 | 节点与话题 |
 | --- | --- |
 | 驱动 | `/trio/driver/{head,torso,left_arm,right_arm}/...` |
-| 底盘 | `/trio/driver/chassis/{odom,cmd_vel,scout_status,rc_status,light_control}` |
+| 底盘 | `/trio/driver/chassis/{cmd_vel,odom,battery_state,rc/joy}` |
 | joint bridge | `/trio/driver/feedback/joint_states`、`/trio/driver/control/joint_states` |
 | kstone_ros | `/trio/kstone/...` |
 | 遥操作 | `/trio/lookie_teleop` |

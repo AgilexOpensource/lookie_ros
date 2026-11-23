@@ -10,7 +10,7 @@ import yaml
 
 from lookie_driver.joint_bridge_node import _parse_module_topics
 from lookie_driver.layout import validate_namespace
-from lookie_driver.models import actuated_urdf_joints, torso_key, validate
+from lookie_driver.models import actuated_urdf_joints, chassis_package, torso_key, validate
 
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
 CONFIG_DIR = PACKAGE_DIR.parent / 'lookie_bringup' / 'config'
@@ -122,6 +122,32 @@ def test_missing_params_section_rejected(tmp_path):
     with pytest.raises(ValueError, match='missing /\\*\\*/head_node'):
         validate(paths['robot_yaml'], _write(tmp_path, 'ros.yaml', params),
                  paths['bridge_config'])
+
+
+@pytest.mark.parametrize('model', MODELS)
+def test_chassis_package_from_params(model):
+    platform = 'neo' if 'lookie_neo' in model else 'trio'
+    assert chassis_package(_paths(model)['params_file']) == f'lookie_{platform}_base'
+
+
+@pytest.mark.parametrize('extra, match', [
+    (None, 'got \\[\\]'),
+    ('/**/chassis/lookie_neo_base', 'got \\[.*, .*\\]'),
+])
+def test_chassis_section_count_rejected(tmp_path, extra, match):
+    paths = _paths(MODELS[0])
+    params = yaml.safe_load(paths['params_file'].read_text(encoding='utf-8'))
+    chassis = [k for k in params if k.startswith('/**/chassis/')]
+    if extra is None:
+        for key in chassis:
+            del params[key]
+    else:
+        params[extra if extra not in chassis else '/**/chassis/lookie_trio_base'] = {}
+    path = _write(tmp_path, 'ros.yaml', params)
+    with pytest.raises(ValueError, match=match):
+        chassis_package(path)
+    with pytest.raises(ValueError, match=match):
+        validate(paths['robot_yaml'], path, paths['bridge_config'])
 
 
 def test_namespace_validation():

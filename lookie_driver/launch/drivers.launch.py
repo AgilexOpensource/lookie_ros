@@ -16,7 +16,7 @@ from launch_ros.actions import Node
 from lookie_driver.layout import (
     ARM_SIDES, CHASSIS_NAMESPACE, HEAD_MODULE, driver_namespace, module_namespaces,
     validate_namespace)
-from lookie_driver.models import torso_key, validate
+from lookie_driver.models import chassis_package, torso_key, validate
 
 FILE_ARGS = {
     'robot_yaml': 'Motor YAML (head + one torso module, lift or fold).',
@@ -46,15 +46,16 @@ def _arm_node(namespace: str, params_file: str) -> Node:
 
 
 def _chassis_node(namespace: str, params_file: str, robot_ns: str) -> Node:
-    # scout_base uses absolute topic names; remap them under the chassis namespace.
+    # The params file names the chassis driver package; its node is <package>_node.
+    package = chassis_package(params_file)
     return Node(
-        package='scout_base',
-        executable='scout_base_node',
+        package=package,
+        executable=f'{package}_node',
+        name=package,
         namespace=namespace,
         output='screen',
         parameters=[params_file, {'odom_frame': f'{robot_ns}/odom',
                                   'base_frame': f'{robot_ns}/base_footprint'}],
-        remappings=[(f'/{t}', t) for t in ('cmd_vel', 'scout_status', 'rc_status', 'light_control')],
     )
 
 

@@ -35,7 +35,7 @@ flowchart TB
         HEAD["head_ros<br/>2-DoF head"]
         TORSO["fold_ros (Trio) / lift_ros (Neo)<br/>torso"]
         ARM["agx_arm_ros ×2<br/>left/right arm + gripper/Revo2 hand"]
-        CHASSIS["scout_ros2 + ugv_sdk<br/>Scout Mini chassis"]
+        CHASSIS["lookie_neo_base / lookie_trio_base + ugv_sdk<br/>differential (Neo) / omni (Trio) chassis"]
     end
 
     subgraph DESC["Description"]
@@ -130,7 +130,7 @@ flowchart LR
         MODS["head / torso /<br/>left_arm / right_arm"]
         CV["chassis/cmd_vel"]
         OD["chassis/odom<br/>TF odom→base_footprint"]
-        SC["chassis/scout"]
+        SC["chassis/lookie_trio_base"]
     end
 
     XT & XB --> TEL
@@ -198,7 +198,7 @@ flowchart LR
     DRV --> LR["lift_ros (Neo)"]
     DRV --> FR["fold_ros (Trio)"]
     DRV --> AR["agx_arm_ros"]
-    DRV --> SR["scout_ros2"] --> UG["ugv_sdk"]
+    DRV --> SR["lookie_neo_base / lookie_trio_base"] --> UG["ugv_sdk"]
 ```
 
 ## 6. Feedback freshness and timeout chain

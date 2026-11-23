@@ -14,14 +14,15 @@
 | lift_ros | [lift_ros](https://github.com/AgilexOpensource/lift_ros)：升降柱和腰部俯仰（Neo） |
 | fold_ros | [fold_ros](https://github.com/AgilexOpensource/fold_ros)：4 自由度折叠模组（Trio） |
 | agx_arm_ctrl | [agx_arm_ros](https://github.com/agilexrobotics/agx_arm_ros/tree/ros2)：松灵机械臂 |
-| scout_base | [scout_ros2](https://github.com/AgilexOpensource/scout_ros2/tree/humble) 和 [ugv_sdk](https://github.com/westonrobot/ugv_sdk)：Scout Mini 底盘 |
+| lookie_neo_base | [lookie_neo_base](https://github.com/AgilexOpensource/lookie_neo_base) 和 [ugv_sdk](https://github.com/westonrobot/ugv_sdk)：差速底盘（Neo） |
+| lookie_trio_base | [lookie_trio_base](https://github.com/AgilexOpensource/lookie_trio_base) 和 [ugv_sdk](https://github.com/westonrobot/ugv_sdk)：全向底盘（Trio） |
 
 ## 机型
 
 | 平台 | 躯干 | 底盘 | 机型（`ee-agx_gripper_r01` / `ee-revo2std_r01`） |
 | --- | --- | --- | --- |
-| Neo | lift_ros | Scout Mini，差速 | `lookie__pf-lookie_neo_r01__ee-<ee>` |
-| Trio | fold_ros | Scout Mini，全向轮 | `lookie__pf-lookie_trio_r01__ee-<ee>` |
+| Neo | lift_ros | lookie_neo_base，差速 | `lookie__pf-lookie_neo_r01__ee-<ee>` |
+| Trio | fold_ros | lookie_trio_base，全向轮 | `lookie__pf-lookie_trio_r01__ee-<ee>` |
 
 本包不含机型列表和配置文件。各机型的驱动配置位于 [lookie_bringup](../lookie_bringup/README.zh-CN.md#配置) 的 `config/<model>/`。躯干驱动由电机 YAML 中除 `head` 外的顶层键决定：`lift` 启动 `lift_ros`，`fold` 启动 `fold_ros`。
 
@@ -72,7 +73,7 @@ ros2 launch lookie_driver joint_bridge.launch.py bridge_config:=$CFG/driver_join
 
 以 `trio` 为例，关节桥把各模组的关节状态合并发布到 `/trio/driver/feedback/joint_states`，并在 `/trio/driver/control/joint_states` 接收命令。关节名与 Lookie URDF 一致；Revo2 的 mimic 关节（`*_distal`）不经过关节桥。
 
-底盘节点 `/trio/driver/chassis/scout` 订阅 `cmd_vel`，在 `/trio/driver/chassis` 下发布 `odom`、`scout_status` 和 `rc_status`，并广播 TF `trio/odom` → `trio/base_footprint`。
+底盘节点运行在 `/trio/driver/chassis` 下，所用的包由 `driver_ros.yaml` 中的 `/**/chassis/<package>` 段指定：Neo 为 [lookie_neo_base](https://github.com/AgilexOpensource/lookie_neo_base)，Trio 为 [lookie_trio_base](https://github.com/AgilexOpensource/lookie_trio_base)。它订阅 `cmd_vel`，发布 `odom`、`battery_state` 和 `rc/joy`（以及 `/diagnostics`），并广播 TF `trio/odom` → `trio/base_footprint`。速度符号等底盘参数见各包 README。
 
 ## 配置
 

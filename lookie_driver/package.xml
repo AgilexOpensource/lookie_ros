@@ -17,7 +17,8 @@
   <exec_depend>lift_ros</exec_depend>
   <exec_depend>fold_ros</exec_depend>
   <exec_depend>agx_arm_ctrl</exec_depend>
-  <exec_depend>scout_base</exec_depend>
+  <exec_depend>lookie_neo_base</exec_depend>
+  <exec_depend>lookie_trio_base</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
 

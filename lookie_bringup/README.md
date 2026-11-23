@@ -61,7 +61,7 @@ Every launch takes `namespace`; empty uses `namespace` from `bringup.yaml` (`tri
 | Part | Nodes and topics |
 | --- | --- |
 | Drivers | `/trio/driver/{head,torso,left_arm,right_arm}/...` |
-| Chassis | `/trio/driver/chassis/{odom,cmd_vel,scout_status,rc_status,light_control}` |
+| Chassis | `/trio/driver/chassis/{cmd_vel,odom,battery_state,rc/joy}` |
 | Joint bridge | `/trio/driver/feedback/joint_states`, `/trio/driver/control/joint_states` |
 | kstone_ros | `/trio/kstone/...` |
 | Teleop | `/trio/lookie_teleop` |

@@ -98,7 +98,7 @@ LIFT = '/**/lift_node:\n  ros__parameters:\n    module_key: lift\n'
     (LIFT + '    feedback_timeout: 0.0\n', 'feedback_timeout_s: 0.25', True),
     (LIFT, 'feedback_timeout_s: 0.5', True),
     (LIFT, 'modules: {}', False),
-    ('/**/chassis/scout:\n  ros__parameters:\n    feedback_timeout: 0.0\n', 'feedback_timeout_s: 0.25', False),
+    ('/**/chassis/lookie_trio_base:\n  ros__parameters:\n    feedback_timeout: 0.0\n', 'feedback_timeout_s: 0.25', False),
     (LIFT + '    feedback_timeout: x\n', 'feedback_timeout_s: 0.25', True),
 ])
 def test_motor_feedback_timeout_warnings(tmp_path, params, kstone, warns):
