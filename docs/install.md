@@ -31,7 +31,7 @@ git clone https://github.com/AgilexOpensource/lookie_ros.git
 vcs import --recursive < lookie_ros/lookie.repos
 ```
 
-`lookie.repos` follows the development branches. For the tested commits (release, production), import [lookie.lock.repos](../lookie.lock.repos) instead, see [Pinned versions](#pinned-versions).
+`lookie.repos` follows the development branches. For the tested commits (release, production), import `lookie.lock.repos` instead, see [Pinned versions](#pinned-versions).
 
 To use one package only, import its own file instead of `lookie.repos`:
 
@@ -65,7 +65,7 @@ pip install -r src/lookie_ros/requirements.txt
 
 With a venv, activate it before building and before running (below). [requirements.txt](../requirements.txt) lists all SDKs and follows their default branches.
 
-[requirements.lock.txt](../requirements.lock.txt) pins each git SDK to a commit and each PyPI SDK to a version. After verifying a set of versions on the robot, regenerate it from that environment and commit it:
+That lock file pins each git SDK to a commit and each PyPI SDK to a version. After verifying a set of versions on the robot, regenerate it from that environment and commit it:
 
 ```bash
 python3 src/lookie_ros/scripts/lock_python.py                # versions installed in this Python
@@ -128,7 +128,7 @@ vcs import --recursive --skip-existing ~/lookie_ws/src < ~/lookie_ws/src/lookie_
 vcs custom ~/lookie_ws/src --git --args submodule update --init --recursive
 ```
 
-The second command imports dependency repositories added since the last install. The third checks out each repository's submodules (for example kstone's `third_party`) at the commits that repository records; `vcs pull` does not update them. With pinned versions, pull only `lookie_ros`, then run the commands in [Pinned versions](#pinned-versions).
+The second command imports dependency repositories added since the last install. The third checks out each repository's submodules (for example kstone's `third_party`) at the commits that repository records; `vcs pull` does not update them. With pinned versions, pull only `lookie_ros`, then run the commands under Pinned versions above.
 
 > **Important:** Rebuild every package after updating (`python3 -m colcon build`). Updating or building only some repositories can leave configs and programs at different versions, for example kstone exiting at startup with `unknown key`. After building, confirm the install matches the source with `python3 src/lookie_ros/scripts/check_install.py`, see [Regression checks](regression.md).
 

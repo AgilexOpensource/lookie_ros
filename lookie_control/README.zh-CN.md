@@ -31,7 +31,7 @@ ros2 launch lookie_control kstone.launch.py namespace:=trio \
 - `namespace`：机器人命名空间，必填。
 - `config_file`：kstone 引擎配置绝对路径，必填。
 - `urdf`：URDF 绝对路径，必填，用于填充引擎配置中的 `${urdf}`。
-- `package_dirs`：填充引擎配置中的 `${package_dirs}`；留空则取包含 URDF 所在包的 share 目录。
+- `package_dirs`：填充引擎配置中的 `${package_dirs}`；留空则取 URDF 的三级父目录（通常为 `install/<包>/share`，即包 share 目录的父目录）。
 - `feedback_topic`、`control_topic`：关节反馈与命令话题，默认 `driver/feedback/joint_states` 和 `driver/control/joint_states`。
 - `base_command_topic`、`odom_topic`：底盘速度命令与里程计，默认 `driver/chassis/cmd_vel` 和 `driver/chassis/odom`。
 - `realtime`：`inherit`（默认）沿用配置里的线程设置；`true` 或 `false` 覆盖它。
@@ -42,4 +42,4 @@ TF 帧带 `<namespace>/` 前缀，世界坐标系为 `odom`，根连杆为 `base
 
 ## 配置
 
-各机型的引擎配置是 [lookie_bringup](../lookie_bringup/README.zh-CN.md#配置) `config/<model>/` 中的 `kstone.yaml`：控制频率、反馈超时、实时线程、求解器、机器人描述和模块。格式以及节点的话题和服务见 [kstone_ros README](https://github.com/AgilexOpensource/kstone_ros)。
+各机型的引擎配置是 [lookie_bringup](../lookie_bringup/README.zh-CN.md#配置) `config/<model>/` 中的 `kstone.yaml`：控制频率、反馈超时、实时线程、求解器、机器人描述和模块。格式以及节点的话题和服务见文首链接的 kstone_ros README。

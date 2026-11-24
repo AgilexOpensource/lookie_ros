@@ -24,11 +24,12 @@ ros2 launch lookie_teleop teleop.launch.py namespace:=trio params_file:=/abs/a.y
 
 - `params_file`: comma-separated parameter YAMLs, applied in order; empty uses the node defaults.
 - `namespace`: node namespace.
+- `chassis_cmd_topic`: chassis velocity output topic; empty uses the kstone velocity port from discover. With a velocity arbiter, set its input topic, for example `lookie_teleop/cmd_vel`.
 
 ## Interfaces
 
 - Input: XR poses `<xr_namespace>/*/transform` and controller buttons `<xr_namespace>/{left,right}_controller/buttons`; `xr_namespace` defaults to `/xr_media`.
-- kstone: reads `<kstone_namespace>/discover` and `<kstone_namespace>/state`, publishes the pose, joint and velocity targets listed there, and calls `<kstone_namespace>/<module>/home`; `kstone_namespace` defaults to `kstone`.
+- kstone: reads `<kstone_namespace>/discover` and `<kstone_namespace>/state`, publishes the pose and joint targets listed there, and calls `<kstone_namespace>/<module>/home` and `<kstone_namespace>/home_cancel`; `kstone_namespace` defaults to `kstone`. Velocity targets go directly to the discovered velocity port by default; the whole-robot launch with `twist_mux` sends them to `lookie_teleop/cmd_vel` for forwarding instead.
 - Haptics: publishes controller pulses on `<xr_namespace>/{left,right}_controller/haptic` to confirm long presses and grip engagement.
 - Status: `~/status`.
 

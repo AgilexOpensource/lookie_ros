@@ -2,7 +2,7 @@
 
 [English](development.md)
 
-面向要修改 lookie_ros 代码或配置的开发者，说明按什么顺序阅读、改哪里、怎么验证。只使用机器人请看 [README](../README.zh-CN.md)。
+面向要修改 lookie_ros 代码或配置的开发者，说明按什么顺序阅读、改哪里、怎么验证。只使用机器人请看下表的 README。
 
 ## 阅读顺序
 
@@ -69,10 +69,10 @@ flowchart LR
 
 | 想知道 | 命令 |
 | --- | --- |
-| kstone 是否接入反馈、有无故障 | `ros2 topic echo /trio/kstone/state --qos-durability transient_local`，看 `joints_attached`、`groups`、`fault` |
-| kstone 有哪些模块和接口 | `ros2 topic echo /trio/kstone/discover --qos-durability transient_local` |
+| kstone 是否接入反馈、有无故障 | `ros2 topic echo /trio/kstone/state --qos-durability transient_local --full-length`，看 `joints_attached`、`groups`、`fault` |
+| kstone 有哪些模块和接口 | `ros2 topic echo /trio/kstone/discover --qos-durability transient_local --full-length` |
 | 关节反馈是否到达 | `ros2 topic hz /trio/driver/feedback/joint_states` |
-| 遥操作当前状态和失能原因 | `ros2 topic echo /trio/lookie_teleop/status` |
+| 遥操作当前状态和失能原因 | `ros2 topic echo /trio/lookie_teleop/status --full-length` |
 | kstone 的目标、命令与求解质量 | [kstone_viewer](../README.zh-CN.md#可视化工具)（`kstone.launch.py debug_port:=7311`） |
 | install 是否与源码一致 | `python3 src/lookie_ros/scripts/check_install.py` |
 

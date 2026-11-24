@@ -31,7 +31,7 @@ git clone https://github.com/AgilexOpensource/lookie_ros.git
 vcs import --recursive < lookie_ros/lookie.repos
 ```
 
-`lookie.repos` 跟踪开发分支。需要经过验证的版本（发布、生产）时，改为导入 [lookie.lock.repos](../lookie.lock.repos)，见[固定版本](#固定版本)。
+`lookie.repos` 跟踪开发分支。需要经过验证的版本（发布、生产）时，改为导入 `lookie.lock.repos`，见[固定版本](#固定版本)。
 
 只用其中一个功能包时，改为导入它自己的文件：
 
@@ -65,7 +65,7 @@ pip install -r src/lookie_ros/requirements.txt
 
 使用虚拟环境时，编译和运行前都要先激活它（见下文）。[requirements.txt](../requirements.txt) 列出全部 SDK，跟踪各自的默认分支。
 
-[requirements.lock.txt](../requirements.lock.txt) 把 git 来源的 SDK 固定到 commit，PyPI 来源的固定到版本号。一组版本在真机上验证通过后，在该环境中重新生成并提交：
+该锁文件把 git 来源的 SDK 固定到 commit，PyPI 来源的固定到版本号。一组版本在真机上验证通过后，在该环境中重新生成并提交：
 
 ```bash
 python3 src/lookie_ros/scripts/lock_python.py                # 当前 Python 中已安装的版本
@@ -128,7 +128,7 @@ vcs import --recursive --skip-existing ~/lookie_ws/src < ~/lookie_ws/src/lookie_
 vcs custom ~/lookie_ws/src --git --args submodule update --init --recursive
 ```
 
-第二条命令导入新增的依赖仓库。第三条把各仓库的子模块（例如 kstone 的 `third_party`）检出到该仓库记录的 commit；`vcs pull` 不会更新子模块。使用固定版本时，只拉取 `lookie_ros`，再执行[固定版本](#固定版本)中的命令。
+第二条命令导入新增的依赖仓库。第三条把各仓库的子模块（例如 kstone 的 `third_party`）检出到该仓库记录的 commit；`vcs pull` 不会更新子模块。使用固定版本时，只拉取 `lookie_ros`，再执行上方“固定版本”中的命令。
 
 > **重要：** 更新后必须重新编译全部功能包（`python3 -m colcon build`）。只更新或只编译部分仓库时，配置与程序版本可能不一致，例如 kstone 启动即报 `unknown key`。编译后用 `python3 src/lookie_ros/scripts/check_install.py` 确认 install 与源码一致，见[回归检查](regression.zh-CN.md)。
 

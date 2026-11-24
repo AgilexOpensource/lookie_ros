@@ -31,7 +31,7 @@ Arguments:
 - `namespace`: robot namespace, required.
 - `config_file`: absolute kstone engine config path, required.
 - `urdf`: absolute URDF path, required. It fills `${urdf}` in the engine config.
-- `package_dirs`: fills `${package_dirs}` in the engine config; empty uses the share directory that contains the URDF package.
+- `package_dirs`: fills `${package_dirs}` in the engine config; empty uses the third parent of the URDF (normally `install/<package>/share`, the parent of the package share directory).
 - `feedback_topic`, `control_topic`: joint feedback and command topics; default `driver/feedback/joint_states` and `driver/control/joint_states`.
 - `base_command_topic`, `odom_topic`: chassis velocity command and odometry; default `driver/chassis/cmd_vel` and `driver/chassis/odom`.
 - `realtime`: `inherit` (default) keeps the thread settings of the config; `true` or `false` overrides it.
@@ -42,4 +42,4 @@ TF frames use the prefix `<namespace>/`. The world frame is `odom` and the root 
 
 ## Configuration
 
-The engine config of each model is `kstone.yaml` in [lookie_bringup](../lookie_bringup/README.md#configuration) `config/<model>/`: control rate, feedback timeout, realtime thread, solver, robot description and modules. See the [kstone_ros README](https://github.com/AgilexOpensource/kstone_ros) for the format and the topics and services of the node.
+The engine config of each model is `kstone.yaml` in [lookie_bringup](../lookie_bringup/README.md#configuration) `config/<model>/`: control rate, feedback timeout, realtime thread, solver, robot description and modules. The kstone_ros README linked at the start covers the format and the node's topics and services.

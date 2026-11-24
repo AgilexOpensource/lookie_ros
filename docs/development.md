@@ -2,7 +2,7 @@
 
 [中文](development.zh-CN.md)
 
-For developers changing lookie_ros code or configs: what to read first, where to change things and how to verify a change. To just run the robot, see the [README](../README.md).
+For developers changing lookie_ros code or configs: what to read first, where to change things and how to verify a change. To just run the robot, see the README in the table below.
 
 ## Reading order
 
@@ -69,10 +69,10 @@ Examples use `trio`; on Neo use `/neo`.
 
 | To find out | Command |
 | --- | --- |
-| Whether kstone attached to feedback, and any fault | `ros2 topic echo /trio/kstone/state --qos-durability transient_local`; look at `joints_attached`, `groups`, `fault` |
-| Which modules and interfaces kstone offers | `ros2 topic echo /trio/kstone/discover --qos-durability transient_local` |
+| Whether kstone attached to feedback, and any fault | `ros2 topic echo /trio/kstone/state --qos-durability transient_local --full-length`; look at `joints_attached`, `groups`, `fault` |
+| Which modules and interfaces kstone offers | `ros2 topic echo /trio/kstone/discover --qos-durability transient_local --full-length` |
 | Whether joint feedback arrives | `ros2 topic hz /trio/driver/feedback/joint_states` |
-| Teleop state and why it disabled | `ros2 topic echo /trio/lookie_teleop/status` |
+| Teleop state and why it disabled | `ros2 topic echo /trio/lookie_teleop/status --full-length` |
 | kstone targets, commands and solve quality | [kstone_viewer](../README.md#viewer) (`kstone.launch.py debug_port:=7311`) |
 | Whether the install matches the source | `python3 src/lookie_ros/scripts/check_install.py` |
 

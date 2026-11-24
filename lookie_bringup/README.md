@@ -15,12 +15,13 @@ Each launch file reads the model from `LOOKIE_MODEL`, a directory under [`config
 ```bash
 sed -i '/^export LOOKIE_MODEL=/d' ~/.bashrc
 echo 'export LOOKIE_MODEL=lookie__pf-lookie_trio_r01__ee-revo2std_r01' >> ~/.bashrc
+source ~/.bashrc
 ```
 
 | Launch file | Starts |
 | --- | --- |
 | `lookie.launch.py` | Drivers, `robot_state_publisher` and optionally RViz |
-| `kstone.launch.py` | kstone_ros whole-body control; check it with `ros2 topic echo /trio/kstone/state --qos-durability transient_local` |
+| `kstone.launch.py` | kstone_ros whole-body control; check it with `ros2 topic echo /trio/kstone/state --qos-durability transient_local --full-length` |
 | `teleop.launch.py` | VR teleop, see [VR teleop](#vr-teleop) |
 
 Start them in this order, one per terminal, after the CAN interfaces listed in [lookie_driver](../lookie_driver/README.md#can-interfaces) are up.
@@ -54,9 +55,17 @@ Launch arguments:
 - `rviz`: defaults to `false`; `true` opens RViz. `robot_state_publisher` publishes TF either way.
 - `fixed_frame`: RViz Fixed Frame without the namespace; defaults to `odom`. Use `base_footprint` when no chassis odometry is running.
 
+### kstone.launch.py arguments
+
+`model`, `config` and `namespace` are as above. Also:
+
+- `realtime`: defaults to `inherit`, keeping the engine config; `true` / `false` override it.
+- `debug_port`: defaults to `inherit`; `7311` enables the debug server, `0` disables it.
+- `use_sim_time`: defaults to `false`; use `true` only with a `/clock` publisher. Joint-slider simulation does not publish `/clock` itself.
+
 ## Namespaces
 
-Every launch takes `namespace`; empty uses `namespace` from `bringup.yaml` (`trio` or `neo`). All nodes and topics live under it, so one value moves the whole system. With `trio`:
+Every launch takes `namespace`; empty uses `namespace` from `bringup.yaml` (`trio` or `neo`). Robot nodes and relative topics follow it; shared XR uses `/xr_media`, and chassis `/diagnostics` is absolute. With `trio`:
 
 | Part | Nodes and topics |
 | --- | --- |
@@ -65,6 +74,7 @@ Every launch takes `namespace`; empty uses `namespace` from `bringup.yaml` (`tri
 | Joint bridge | `/trio/driver/feedback/joint_states`, `/trio/driver/control/joint_states` |
 | kstone_ros | `/trio/kstone/...` |
 | Teleop | `/trio/lookie_teleop` |
+| Velocity arbitration | `/trio/twist_mux`; input `/trio/lookie_teleop/cmd_vel`, output `/trio/kstone/chassis/control/cmd_vel` |
 | XR | `/xr_media` (shared, not namespaced) |
 
 TF frames use the prefix `<namespace>/`. kstone uses `trio/odom` as its world frame. The chassis driver broadcasts `trio/odom` → `trio/base_footprint`. The URDF root is `base_footprint` (the ground point under the chassis), so `robot_state_publisher` continues the tree from there, and kstone reads that odometry directly as its root pose. RViz uses Fixed Frame `trio/odom` to show chassis motion. Without a chassis driver or another `odom` source, `trio/odom` does not exist and RViz cannot place the robot; use `fixed_frame:=base_footprint` in that case.
@@ -83,7 +93,8 @@ config/
 │   ├── kstone.yaml               # lookie_control: kstone engine config
 │   └── teleop.yaml               # lookie_teleop: model-specific values
 ├── lookie_teleop/common.yaml     # shared by all models
-└── xr_media_ros/xr_media.yaml    # shared by all models
+├── xr_media_ros/xr_media.yaml    # shared by all models
+└── twist_mux.yaml               # chassis velocity sources, priorities and timeouts
 ```
 
 `bringup.yaml` paths are `package://<pkg>/<relative>`, absolute, or relative to `bringup.yaml`:
@@ -118,6 +129,8 @@ This starts `xr_media_ros` (XR card only, no media), `lookie_teleop` and `twist_
 
 `twist_mux` sits in front of the kstone chassis velocity input: teleop publishes on `lookie_teleop/cmd_vel` and the mux forwards it to `kstone/chassis/control/cmd_vel`. Sources, priorities and timeouts are listed in `config/twist_mux.yaml`; adding a source is one entry there. Teleop is quiet when idle, so it does not hold the topic with zeros and block another source. Without `twist_mux` installed, a warning is logged and teleop writes the kstone chassis input directly (`mux:=false` does the same).
 
+The teleop source currently has priority 100 and timeout 0.15 s. After joystick release, stopping zeros continue until settling or a 2 s wait expires; that source remains active during the tail. kstone's velocity lease is 0.25 s, and fresh velocity (including zero) outranks pose targets. Without the mux, the kstone velocity input must have only one publisher; other sources must not bypass the mux and write the chassis driver directly.
+
 Arguments: `model`, `config`, `namespace` (same as above), `xr`, `teleop` and `mux` (default `true`; `false` skips that node).
 
 The `teleop` section of `bringup.yaml` selects the shared files under `config/xr_media_ros/` and `config/lookie_teleop/`, then `teleop.yaml` of the model:
@@ -130,4 +143,4 @@ teleop:
     - teleop.yaml
 ```
 
-`teleop.yaml` holds the model-specific values: `body_axes` (axes the headset may drive) and the end effector (`ee_modules`, `ee_open`, `ee_close`).
+`teleop.yaml` holds model-specific `body_axes`, `controller_tcp`, `lean_pivot_m`, end effectors, and Neo waist joints, Home modules, ranges and rate overrides. Effective parameters follow: node defaults → common.yaml → model teleop.yaml → launch overrides.

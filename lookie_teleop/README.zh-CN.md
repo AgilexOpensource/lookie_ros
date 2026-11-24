@@ -24,11 +24,12 @@ ros2 launch lookie_teleop teleop.launch.py namespace:=trio params_file:=/abs/a.y
 
 - `params_file`：逗号分隔的参数 YAML，按顺序加载；留空使用节点默认值。
 - `namespace`：节点命名空间。
+- `chassis_cmd_topic`：底盘速度发布话题，留空使用 discover 中的 kstone 速度端口；接入速度仲裁器时设为其输入话题，例如 `lookie_teleop/cmd_vel`。
 
 ## 接口
 
 - 输入：XR 位姿 `<xr_namespace>/*/transform` 和手柄按键 `<xr_namespace>/{left,right}_controller/buttons`；`xr_namespace` 默认 `/xr_media`。
-- kstone：读取 `<kstone_namespace>/discover` 和 `<kstone_namespace>/state`，发布其中列出的位姿、关节和速度目标，并调用 `<kstone_namespace>/<module>/home`；`kstone_namespace` 默认 `kstone`。
+- kstone：读取 `<kstone_namespace>/discover` 和 `<kstone_namespace>/state`，发布其中列出的位姿、关节目标，并调用 `<kstone_namespace>/<module>/home` 与 `<kstone_namespace>/home_cancel`；`kstone_namespace` 默认 `kstone`。速度目标默认直接发送到发现的速度端口；整机启动启用 `twist_mux` 时，先发到 `lookie_teleop/cmd_vel` 再由 mux 转发。
 - 震动：向 `<xr_namespace>/{left,right}_controller/haptic` 发布手柄震动，用于确认长按和侧扳机接管。
 - 状态：`~/status`。
 

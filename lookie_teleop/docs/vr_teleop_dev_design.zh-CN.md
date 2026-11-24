@@ -36,7 +36,6 @@ flowchart LR
         RT["right_controller/transform"]
         LB["left_controller/buttons"]
         RB["right_controller/buttons"]
-        ST["status"]
     end
     subgraph TP["lookie_teleop"]
         IN["输入层<br/>新鲜度/跳变检测"]
@@ -54,7 +53,7 @@ flowchart LR
         KH["home / M/home"]
         KF["M/feedback/pose"]
     end
-    HT & LT & RT & ST --> IN
+    HT & LT & RT --> IN
     LB & RB --> BTN
     IN --> SM
     BTN --> SM
@@ -66,6 +65,8 @@ flowchart LR
 ```
 
 ### 2.1 订阅
+
+图中为节点默认直连接口。整机启动启用 `twist_mux` 时，速度输出改为 `lookie_teleop/cmd_vel`，经 mux 到达 kstone；位姿和关节目标仍直连。ROS 命名空间及实际话题见 [lookie_bringup](../../lookie_bringup/README.zh-CN.md#vr-遥操作)。
 
 | 话题 | 类型 | 用途 |
 | --- | --- | --- |
@@ -96,27 +97,27 @@ flowchart LR
 | `/kstone/left_arm_pose/control/pose` | `PoseStamped`，frame `chassis_base_link` | 左臂末端目标（夹爪 `l_gripper_tip`，Revo2 灵巧手 `l_palm`） |
 | `/kstone/right_arm_pose/control/pose` | 同上 | 右臂末端目标（`r_gripper_tip` / `r_palm`） |
 | `/kstone/torso_pose/control/pose` | `PoseStamped`，frame `chassis_base_link` | 腰部 `chest_link` 目标 |
-| `/kstone/chassis/control/pose` | `PoseStamped`，frame `world_frame` | 底盘平面位姿目标（**仅全向**，头显驱动时） |
-| `/kstone/chassis/control/cmd_vel` | `Twist` | 摇杆底盘速度（全向 x/y/yaw，差速 x/yaw）；见下方发布规则 |
-| `/kstone/control/joint` | `JointState`，frame_id 为空 | 末端执行器关节目标（按名路由到 `ee_modules` 中的模块，如 `*_hand_joint`、`*_gripper_joint`） |
+| `/kstone/chassis/control/pose` | `PoseStamped`，frame `world_frame` | 头显驱动的底盘平面位姿目标（全向 x/y/yaw，差速前后/yaw） |
+| `/kstone/chassis/control/cmd_vel`（默认） | `Twist` | 摇杆底盘速度（全向 x/y/yaw，差速 x/yaw）；`chassis_cmd_topic` 可改为 mux 输入话题 |
+| `/kstone/control/joint` | `JointState`，frame_id 为空 | 末端执行器关节目标，以及配置 `torso_joints` 时的腰部关节目标（§11） |
 | `/xr_media/{left,right}_controller/haptic` | `Float32MultiArray` `[强度, 时长 ms]` | 手柄震动确认（§5） |
 | `~/status` | `String` JSON | 遥操作状态、拒绝/失能原因、各臂子状态（UI/日志） |
 
 发布规则：
 
-- 所有带 header 的命令用**本节点 `now()`** 打时间戳，不沿用 XR 数据的时间戳（kstone 拒绝超过 0.5 s 或未来的时间戳）。
-- 底盘 `cmd_vel`：摇杆有量时随主循环发布；摇杆归零后继续发 0，直到测得的位姿停稳（0.3 s，最多 2 s）再**停发**，此后该话题上没有本节点的消息。kstone 超时后直接清零输出而不减速，所以这段零速要盖住底盘减速过程；空闲不发零速，是为了让同一话题上的其他速度源（如导航，经 twist_mux 汇入）不被零速压住。头显驱动底盘位姿期间不发 `cmd_vel`（避免与位姿指令抢占同一指令槽）。
+- 所有带 header 的命令用**本节点 `now()`** 打时间戳，不沿用 XR 数据的时间戳。kstone_ros 按每个命令话题检查时间戳连续性：回退，或时间戳推进与实际接收间隔的偏差超过 `command_timeout_s` 时拒绝，不按时间戳相对节点时钟的绝对年龄拒绝；详见 [kstone_ros 接口](https://github.com/AgilexOpensource/kstone_ros/blob/main/docs/interfaces.zh-CN.md#节点参数)。
+- 底盘 `cmd_vel`：摇杆有量时随主循环发布；摇杆归零后继续发 0，直到测得的位姿停稳（0.3 s，最多等 2 s；超时也结束零速流）再**停发**。空闲静默使其他 mux 速度源不被持续零速压住，但停车零速流期间仍占用速度源。头显位姿目标可与停车零速流同时发布；kstone 内部的新鲜速度指令（含零速）优先于位姿目标。速度流结束、其租约失效后，持续重发的位姿目标才重新接上。mux 仅仲裁速度源，不仲裁位姿目标。
 
 ### 2.3 服务调用
 
 | 服务 | 用途 |
 | --- | --- |
-| `/kstone/M/home`（`Trigger`） | 对 `home_modules` 中每个模块单独回 Home（只用 pose 模块；末端执行器不回 Home） |
+| `/kstone/M/home`（`Trigger`） | 对 `home_modules` 中每个模块单独回 Home（臂用 pose 模块；Neo 腰用关节模块，§11；末端执行器不回 Home） |
 | `/kstone/home_cancel`（`Trigger`） | 回Home 中短按 B：一次调用取消所有正在进行的回 Home，各模块平滑停在当前位置并保持 |
 | ~~`/kstone/home`~~ | **不使用**：它对"当前持有控制权"的模块回零，持有者可能是 `*_arm_joint` / `torso_joint`，会走关节 Home |
 | ~~`/kstone/M/enable`~~ | **不使用**：遥操作失能只停发命令，不改模块使能状态，恢复时无需额外操作 |
 
-响应 `accepted request_id=N` **只代表入队**，完成以 `~/state` 为准。遥操作只用 pose 模式，因此只用 pose 模块的 Home；pose 模块回 Home 后自身持有控制权，后续第一帧位姿目标不存在被关节模块占用而延迟的问题。
+响应 `accepted request_id=N` **只代表入队**，完成以 `~/state` 为准。臂只用 pose 模块的 Home，Neo 的腰按配置使用关节模块；后续目标仍发给同一控制模块，避免被另一模块占用而延迟。
 
 ## 3. 机型 Profile
 
@@ -129,12 +130,12 @@ flowchart LR
 | 头显 → 腰 Z | 是 | 是（俯身补偿后的高度；臂补升降柱的滞后和下限以下的余量） |
 | 头显 → 腰 pitch | 是 | 是 |
 | 头显 → 腰 yaw | 是（腰部模式） | 否 |
-| Y 长按切换 | 是 | 是（腰 ↔ 底盘 yaw，默认腰） |
+| Y 长按切换 | 是 | 是（腰 ↔ 底盘前后/yaw，默认腰） |
 | 左摇杆 | x 前后、y 左右平移 | 仅前后（`linear.y` 被 kstone 忽略，遥操作也置 0） |
 | 右摇杆 x | 底盘转向 | 底盘转向 |
 | 右摇杆 y（X 切换 Z/pitch） | 是 | 是（Z 偏置与 pitch 偏置均可调） |
 
-内部用"轴使能集合"表示：trio = `{chassis, waist_x, waist_z, waist_pitch, waist_yaw}`，neo = `{waist_pitch}`。映射代码只判断轴是否使能，不写机型分支。
+内部用"轴使能集合"表示：trio = `{chassis, waist_x, waist_z, waist_pitch, waist_yaw}`，neo = `{chassis, waist_z, waist_pitch}`。映射代码只判断轴是否使能，不写机型分支。
 
 ## 4. 状态机
 
@@ -184,7 +185,7 @@ stateDiagram-v2
 
 - **停住**：在 $F_t$ 下保持该臂最后目标（使能后首帧取反馈）并持续发布；腰 Z 变化时随腰一起升降，腰 pitch 变化时在底盘系下不动。
 - **追赶**：从当前末端位姿向映射目标插值，见 §9。
-- **激活**：直接发布（经工作空间钳制与限速）的映射目标。
+- **激活**：直接发布经工作空间钳制的映射目标；遥操作层不限速，速度上限由 kstone 负责（§9.3）。
 - **手柄丢失**（该侧 transform / joy 超时、跳变、离头显过远）：只停该臂（保持目标），不失能；手柄恢复后需重新双击按住侧扳机才再接管，丢失期间的按键被吞掉。头显数据超时则两臂都停住（同样需重新双击，不失能）；头显跳变 / 时间戳回退则整体失能（§12）。
 - **头显驱动条件**：两臂都处于 `激活`（不含追赶）。从"非双激活"变为"双激活"的瞬间记为 **双激活时刻**。
 
@@ -218,14 +219,18 @@ stateDiagram-v2
 ```mermaid
 flowchart LR
     S{摇杆有输入?} -- 是 --> J["发 cmd_vel<br/>暂停头显→底盘"]
-    S -- 否 --> W{上一帧摇杆有输入?}
-    W -- 是 --> R["重新记录底盘参考"] --> H
-    W -- 否 --> H{"双激活且底盘模式（trio）?"}
+    S -- 否 --> W{仍有停车零速流?}
+    W -- 是 --> Q{"已停稳 0.3 s 或等待满 2 s?"}
+    Q -- 否 --> V["继续发零速"] --> H
+    Q -- 是 --> R["停发零速<br/>重新记录底盘参考"] --> H
+    W -- 否 --> H{"双激活且底盘模式?"}
     H -- 是 --> P["头显驱动底盘位姿"]
-    H -- 否 --> Z["不发 cmd_vel（空闲）"]
+    H -- 否 --> Z["不发底盘位姿目标"]
 ```
 
 ## 6. 坐标系与挂载修正
+
+上图覆盖反馈正常的已使能周期。零速流尚新鲜时，kstone 会压住同时发布的头显位姿目标；无零速流且不满足头显驱动条件时，两类底盘目标都不发布。底盘反馈过期时的零速保持见 §12。
 
 ### 6.1 坐标系
 
@@ -332,7 +337,7 @@ $$C_t = C_{ref}\;\oplus\;\mathrm{planar}\big(F_h(ref)^{-1}F_h(t)\big)$$
 - 偏航防折返：目标偏航领先底盘反馈最多 150°。位姿目标的偏航是折回 ±180° 的，kstone 按最短方向转，领先超过 180° 会让底盘反向转；正常跟随时不会触发。
 - 背离保护：与期望位姿的误差超过 0.2 m / 15°、且底盘反馈仍在**远离**期望位姿（远离速度 > 0.05 m/s 或 0.1 rad/s）持续 1.5 s 时失能（操作员快速左右晃动时，滞后的底盘反向运动实测最长约 0.7 s，不应触发）。用于发现底盘轴向反了等情况。底盘被障碍物挡住不动时不算背离，不会失能。
 - 这里的 $F_h$ 是俯身补偿后的髋点（§8.1，`lean_pivot_m`），俯身够东西不会带动底盘。
-- 差速（neo）：只有人沿自身朝向走的距离驱动目标，沿目标朝向移动，速度不超过 `chassis_vx_max`；横向迈步忽略。每个周期还去掉目标在实测底盘侧方的部分，底盘还在转向时也不会拿到它走不到的目标。kstone 把沿朝向的距离和 yaw 一起规划（边走边转，不横移）；运动中按自身参考位姿执行 Ruckig 轨迹（不依赖里程计延迟），轨迹结束在容差内（neo 1 cm / 1°）即锁存到位（直到来了新目标，遥控挪动后不会开回去），超出容差才在静止后补走；其加速度与底盘实测一致（neo 线加速 0.6、线减速 1.0 m/s²，角加速度 0.65 rad/s²）。
+- 差速（neo）：只有人沿自身朝向走的距离驱动目标，沿目标朝向移动，速度不超过 `chassis_vx_max`；横向迈步忽略。每个周期还去掉目标在实测底盘侧方的部分，底盘还在转向时也不会拿到它走不到的目标。kstone 把沿朝向的距离和 yaw 一起规划（边走边转，不横移）；运动中按自身参考位姿执行 Ruckig 轨迹（不依赖里程计延迟），轨迹结束在容差内（neo 1 cm / 1°）即锁存到位（直到来了新目标，遥控挪动后不会开回去），超出容差才在静止后补走。上限取所选机型的 `kstone.yaml`：Neo 夹爪版速度 1.0 m/s / 2.0 rad/s，线加/减速 1.0 / 1.5 m/s²，角加/减速均 1.5 rad/s²；Neo Revo2 版保留速度 0.5 m/s / 1.0 rad/s，线加/减速 0.6 / 1.0 m/s²，角加/减速均 0.65 rad/s²。
 - 发布到 `chassis/control/pose`（`world_frame`）。
 
 ### 8.4 参考记录时刻
@@ -342,7 +347,7 @@ $$C_t = C_{ref}\;\oplus\;\mathrm{planar}\big(F_h(ref)^{-1}F_h(t)\big)$$
 | 臂 $M_0, m_0, C_i$ | 是 | — | — | — |
 | 腰 Z / pitch（$z_0,\theta_0$…） | 是 | — | — | — |
 | 腰 x、yaw | 是 | 是 | 是 | — |
-| 底盘 $C_{ref}, F_h(ref)$ | 是 | 是 | 是 | 是 |
+| 底盘 $C_{ref}, F_h(ref)$ | 是 | 是 | 是 | 停稳或等待超时后 |
 
 > 双激活时刻定义为"头显控制从停止变为生效的那一刻"：即第二只侧扳机进入激活；若 Y 从腰部切到底盘时两侧已激活，则取 Y 切换那一刻。
 > 摇杆松开后先发零速，等底盘停稳（位姿 0.3 s 内变化 < 5 mm / 0.5°，最多等 2 s）再重记底盘参考、交回头显。底盘有约 0.2 s 响应延迟并会滑行减速，若在松开瞬间记参考，头显位姿控制会把摇杆刚走的那段拉回去。
@@ -367,7 +372,7 @@ $$C_t = C_{ref}\;\oplus\;\mathrm{planar}\big(F_h(ref)^{-1}F_h(t)\big)$$
 
 ```mermaid
 flowchart LR
-    A["手柄位姿 h_i"] --> B["F_h 变换<br/>p_i"] --> C["映射<br/>e_i, Q_i"] --> D["工作空间钳制 Π"] --> E["追赶 / 限速"] --> G["→ chassis_base_link<br/>发布"]
+    A["手柄位姿 h_i"] --> B["F_h 变换<br/>p_i"] --> C["映射<br/>e_i, Q_i"] --> D["工作空间钳制 Π"] --> E["追赶限速 / 激活直发"] --> G["→ chassis_base_link<br/>发布"]
 ```
 
 ### 9.2 工作空间（在机器人躯干航向系 $F_t$ 下）
@@ -383,7 +388,7 @@ flowchart LR
 - **参考点相对躯干固定**：正方体在 $F_t$ 下表达，跟随腰的位置和 yaw（$F_t$ 原点是 `chest_link` 目标），A 之后不再变化；之后松开、再激活侧扳机都用同一个正方体，不重新取点。
 - **何时解除**：每臂各自判断。侧扳机激活（双击按住）后开始钳制；映射目标第一次落在正方体内即解除，此后该臂自由跟随，手柄再伸出正方体也不再钳制；松开侧扳机或该侧手柄丢失后再激活，重新开始钳制。用途是激活时手柄位置不合理（离得太远）不会把臂拉出去，而不是限制遥操作过程中的动作范围。
 - 钳制 $\Pi$：每轴截断到 $[\mathbf c - d, \mathbf c + d]$。正方体是凸集，每轴截断就是最近点投影，连续、幂等。解除时映射目标就在正方体内，等于钳制结果，发布值不跳变。
-- 追赶 / 限速每帧从上一帧发布值向（钳制后的）目标移动，不需要再次投影。
+- 追赶时每帧从上一帧发布值向（钳制后的）目标限速移动，不需要再次投影；激活后直接发布映射目标。
 - **只约束位置，不约束姿态**（姿态由 WBC 权重处理）。
 - 被约束**不触发失能**，只在 `~/status` 中标记 `clamped`。
 - 首次激活 / 再激活时若映射目标在正方体外，追赶目标就是钳制后的点，臂停在边界上等用户手回来。
@@ -432,14 +437,14 @@ sequenceDiagram
     end
 ```
 
-- `home_modules` 默认：`torso_pose, left_arm_pose, right_arm_pose`。只用 pose 模块 Home，不用 `*_arm_joint` 的关节 Home；末端执行器不回 Home（需要时可由运控单独对其回 Home）。`torso_joints` 给出时腰改为关节空间驱动（通用接口，不区分机型）：每项为 `角色:关节名`，角色取 `x`、`z`、`pitch`、`yaw`，关节方向与腰部约定（x 向前、z 向上、pitch > 0 前俯、yaw > 0 左转）相反时写 `角色:-关节名`。腰以关节目标发到 `control/joint`，反馈取自 `feedback/joint_states`，未给关节的角色反馈视为 0，对应的 `waist_*` 轴不再由头显驱动；各角色的范围取 discover 中的关节范围（x、z 直接作为绝对范围，pitch、yaw 与 `waist_*_limits_deg` 取交集）。Lookie neo 设置 `torso_joints: ["z:torso_joint1", "pitch:torso_joint2"]`：其 kstone 没有 `torso_pose`，而是两个关节目标 `torso_lift_joint` / `torso_pitch_joint`（同一 QP 层），改为对它们回 Home；头显高度（用 `lean_pivot_m` 做俯身补偿，§8.1，单纯俯身不动升降）加右摇杆 z 模式驱动升降，俯身驱动 pitch。臂目标在 `chassis_base_link` 下是绝对的，随升降目标（`waist_z_rate`）移动，所以由臂补偿升降柱实际的慢速。低于升降下限的部分，跟随中的臂目标继续下降（`arm_dz`，同样速度），最多到 `waist_z_range`（neo：Home 时的夹爪尖可降到地面以下 0.04 m）；上限不补偿，摇杆只动升降柱。
+- `home_modules` 默认：`torso_pose, left_arm_pose, right_arm_pose`。臂只用 pose 模块 Home，不用 `*_arm_joint` 的关节 Home；末端执行器不回 Home（需要时可由运控单独对其回 Home）。`torso_joints` 给出时腰改为关节空间驱动（通用接口，不区分机型）：每项为 `角色:关节名`，角色取 `x`、`z`、`pitch`、`yaw`，关节方向与腰部约定（x 向前、z 向上、pitch > 0 前俯、yaw > 0 左转）相反时写 `角色:-关节名`。腰以关节目标发到 `control/joint`，反馈取自 `feedback/joint_states`，未给关节的角色反馈视为 0，对应的 `waist_*` 轴不再由头显驱动；各角色的范围取 discover 中的关节范围（x、z 直接作为绝对范围，pitch、yaw 与 `waist_*_limits_deg` 取交集）。Lookie neo 设置 `torso_joints: ["z:torso_joint1", "pitch:torso_joint2"]`：其 kstone 没有 `torso_pose`，而是两个关节目标 `torso_lift_joint` / `torso_pitch_joint`（同一 QP 层），改为对它们回 Home；头显高度（用 `lean_pivot_m` 做俯身补偿，§8.1，单纯俯身不动升降）加右摇杆 z 模式驱动升降，俯身驱动 pitch。臂目标在 `chassis_base_link` 下是绝对的，随升降目标（`waist_z_rate`）移动，所以由臂补偿升降柱实际的慢速。低于升降下限的部分，跟随中的臂目标继续下降（`arm_dz`，同样速度），最多到 `waist_z_range`（neo：Home 时的夹爪尖可降到地面以下 0.04 m）；上限不补偿，摇杆只动升降柱。
 - 每个模块判定成功需同时满足：
   1. `outcomes` 中找到对应 `request_id` 且 `applied=true`；请求后尽快轮询，在 `outcome_timeout_s` 内**查不到即视为失败**（outcomes 是环形缓冲，可能被挤出）；`applied=false` 时把 `error` 写入失能原因。
   2. `home_state` 只认**已包含该 outcome 的快照**中的值，此后到达 `succeeded`。`home_state` 会停留在上一次的终态，请求前的 `succeeded` 旧值不算数；同一快照里 outcome 与模块状态一致（受理时已置为 `waiting`），因此已在 Home 点、30 Hz 下看不到 `waiting/executing` 也能正确判定。
   3. `held_by` 为 `null`（模块自身持有控制权）。
 - `timed_out`（kstone 以"最后一次进展"计时）、`aborted`（运动被其他输入打断 / 跳过）均为失败。
 - 遥操作不做插值，运动由 kstone 完成。
-- 回Home 期间只有主扳机有效：末端执行器照常跟随（§10），其余按键（含 B 长按）被忽略。
+- 回Home 期间主扳机照常控制末端执行器（§10），摇杆可控制底盘，B 短按可取消回 Home；A/X/Y、侧扳机、B 长按及腰部微调无效。
 
 ## 12. 失能条件
 
@@ -484,11 +489,13 @@ Quest 长按 Home 键重新居中会重置 `local-floor` 参考空间：同一�
 | 松开双侧扳机后、小于阈值的偏移 | 臂是 $F_h$ 局部量不受影响；腰 yaw、底盘在下次双激活时重记参考；`local-floor` 保留地面高度，腰 Z 不变；pitch 只取身体系 pitch，不受平移/yaw 影响 |
 | 双激活中、小于阈值的偏移 | 腰 yaw / 底盘目标最多改变一个阈值量，并受 `waist_yaw_rate`、`chassis_vx_max/vy_max/w_max` 限速 |
 
-任何时机居中都不会把跳变下发给运控。面向操作者的要求见[快速上手 §3](vr_teleop_quickstart.zh-CN.md#3-操作前准备)。
+面向操作者的居中要求见快速上手 §3。
 
 ## 13. 参数
 
-默认值取自 `lookie_teleop/node.py` 的 `PARAMS`；`lookie_bringup/config/lookie_teleop/common.yaml` 除表中注明的速度上限外取值相同，机型 `teleop.yaml` 只覆盖 `body_axes` 与末端执行器。角度带 `_deg` 后缀的单位为度，其余为 m、rad、s。
+默认值取自 `lookie_teleop/node.py` 的 `PARAMS`；`lookie_bringup/config/lookie_teleop/common.yaml` 除表中注明的速度上限外取值相同。机型 `teleop.yaml` 还可覆盖 TCP、髋部支点、腰部关节/Home、范围和速度等；不能把节点默认值当作实机有效值。角度带 `_deg` 后缀的单位为度，其余为 m、rad、s。
+
+Neo 两种末端配置都覆盖 `joy_z_rate=0.015`、`waist_z_range=[-0.97,0.4]`、`waist_pitch_limits_deg=[-45,90]`，并使用腰部关节 Home。Neo 夹爪版另覆盖摇杆 `max_vx=1.0`、`max_wz=2.0`；其他机型保留共用摇杆速度，再受 discover 的底盘上限裁剪。
 
 | 分组 | 参数 | 默认 |
 | --- | --- | --- |
@@ -501,9 +508,10 @@ Quest 长按 Home 键重新居中会重置 `local-floor` 参考空间：同一�
 | 摇杆腰偏置 | `joy_z_rate` / `joy_pitch_rate` | 0.10 m/s / 0.3 rad/s |
 | 挂载 | `headset_forward_axis` / `mount_max_deg` / `yaw_warn_deg` | `[1,0,0]` / 35 / 15 |
 | 校准 | `calib_x` / `calib_z` / `min_cross` / `max_side` / `spacing_tol`（仅警告） | `[0.15,0.70]` / `[-0.60,0.30]` / 0.10 / 0.20 / 0.10 |
-| 映射 | `R_body_to_torso`（rpy） / `controller_tcp`（xyz + rpy） | `[0,0,0]` / 全 0（common.yaml），按末端在 teleop.yaml 中设置。**始终以右手柄为参考**给出（+X 指向前方，+Y 朝内即掌心方向，+Z 向上；由 xr_media 从 WebXR grip pose 转换，原点在弯曲手指的中心），左手柄取镜像（y、roll、yaw 取反）。xyz 在**旋转后**的系中给出：先按 rpy 旋转，点再沿旋转后的轴偏移 $T=R_y\cdot\text{Translate}(xyz)$（**不是**工业惯例的 $T=[R|xyz]$，故 rpy 变化时该点随之移动）；旋转后的 TCP 系水平朝前即对应末端 Home 姿态。夹爪：`[0.055,0,0.03,0,0.5236,0]`（沿按键面板平面内前方 5.5 cm，再沿面板法线 3 cm，pitch 30°）→ `*_gripper_tip`；Revo2 灵巧手：`[0,0.05,0,0,0.5236,0]`（朝内 5 cm，位于 pitch 转轴上，旋转不改变其位置，pitch 30°）→ `*_palm`（URDF 中手轴线上 +0.07 m）。§8.1 |
+| 映射 | `R_body_to_torso`（rpy） / `controller_tcp`（xyz + rpy） | `[0,0,0]` / 全 0（common.yaml），按末端在 teleop.yaml 中设置。**始终以右手柄为参考**给出（+X 指向前方，+Y 朝内即掌心方向，+Z 向上；由 xr_media 从 WebXR grip pose 转换，原点在弯曲手指的中心），左手柄取镜像（y、roll、yaw 取反）。xyz 在**旋转后**的系中给出：先按 rpy 旋转，点再沿旋转后的轴偏移 $T=R_{\mathrm{rpy}}\cdot\text{Translate}(xyz)$（**不是**工业惯例的 $T=[R\mid xyz]$，故 rpy 变化时该点随之移动）；旋转后的 TCP 系水平朝前即对应末端 Home 姿态。夹爪：`[0.055,0,0.03,0,0.5236,0]`（沿按键面板平面内前方 5.5 cm，再沿面板法线 3 cm，pitch 30°）→ `*_gripper_tip`；Revo2 灵巧手：`[0,0.05,0,0,0.5236,0]`（朝内 5 cm，位于 pitch 转轴上，旋转不改变其位置，pitch 30°）→ `*_palm`（URDF 中手轴线上 +0.07 m）。§8.1 |
 | 映射 | `lean_pivot_m` | 0（neo、trio：0.27，§8.1、§8.2） |
 | 腰 | `k_x` / `k_z` / `k_pitch` | 1.0 / 1.0 / 1.0 |
+| 腰关节映射 | `torso_joints` | 未设置（使用 `torso_pose`）；Neo 为 `["z:torso_joint1", "pitch:torso_joint2"]`，见 §11 |
 | 腰 Z 范围（相对 A） | `waist_z_range` | `[-0.8, 0.15]` |
 | 腰限速 | `waist_x_rate` / `waist_z_rate` / `waist_pitch_rate` / `waist_yaw_rate` | 0.2 m/s / 0.2 m/s / 0.8 rad/s / 1.0 rad/s |
 | 腰 pitch 绝对限位 | `waist_pitch_limits_deg` | `[-30, 90]`（后仰，前俯） |
@@ -521,17 +529,17 @@ Quest 长按 Home 键重新居中会重置 `local-floor` 参考空间：同一�
 
 | 项 | 约束 | 处理 |
 | --- | --- | --- |
-| Home 状态残留 | `home_state` 停留在上次终态；关节 Home 结束后关节模块继续持有控制权（pose 模块 `held_by` 为关节模块） | 按 §11 规则判定；只用 pose 模块 Home |
+| Home 状态残留 | `home_state` 停留在上次终态；另一模块的 Home 会改变控制权 | 按 §11 规则判定；臂用 pose 模块，Neo 腰用配置的关节模块 |
 | 无驱动仿真 | 未接驱动反馈时 `fresh=false` | `require_fresh` 参数，纯仿真调试时可关；实机必须开 |
 | outcomes 环形缓冲 | 旧结果会被挤出 | 请求后尽快轮询，查不到即失败并失能 |
 | XR 追踪状态 | xr_media_ros 只在追踪时发布，无单独标志 | 按接收超时判断（§12） |
 | 震动反馈 | 依赖头显浏览器支持；手势追踪时无震动器 | 长按 / 侧扳机接管时震动确认（§5），失败不影响操作；状态仍以 `~/status` 为准 |
 | 重心 / 自碰撞 | kstone 有 `com`、`self_collision` 模块 | 遥操作不干预，交由运控处理 |
 | 多遥操作节点 | 两个遥操作节点同时发目标会互相抢占 | 同一时刻只运行一个遥操作节点 |
-| 头显设置 | 安全边界、佩戴检测休眠、Home 键居中都会打断遥操作 | 操作者按[快速上手 §3](vr_teleop_quickstart.zh-CN.md#3-操作前准备)设置；居中行为见 §12.1 |
+| 头显设置 | 安全边界、佩戴检测休眠、Home 键居中都会打断遥操作 | 操作者按快速上手 §3 设置；居中行为见 §12.1 |
 | 头部 | 运控层自动注视双臂末端 | 遥操作不发头部目标 |
 | 胸挂 yaw 偏差 | 无法标定，只能警告 | §6.2 |
-| 控制权 | kstone 以"最后收到目标"判定持有者 | 遥操作只用 pose 模块控制臂/腰，不混发臂关节目标 |
+| 控制权 | 臂/腰模块按既有优先级和目标仲裁；底盘速度优先于位姿 | 臂只发 pose，腰按配置选 pose 或关节目标；停车零速流结束后持续位姿目标重新接上 |
 | 底盘位姿坐标系 | `world_frame` 的具体值（如 `odom`）由 kstone 配置决定 | 启动时从 `discover` 读取，不硬编码 |
 
 ## 15. 包结构
@@ -566,7 +574,8 @@ lookie_bringup/
 │   └── teleop.yaml                  # body_axes + 末端执行器（ee_modules / ee_open / ee_close）
 ├── config/xr_media_ros/xr_media.yaml   # xr_media_ros：只有 XR 卡片，不配置 media
 ├── config/lookie_teleop/common.yaml    # 各机型共用的调参，被 teleop.yaml 覆盖
-└── launch/teleop.launch.py          # xr_media_ros + lookie_teleop，不启动 kstone_ros
+├── config/twist_mux.yaml              # 速度源、优先级与超时
+└── launch/teleop.launch.py          # xr_media_ros + lookie_teleop + twist_mux，不启动 kstone_ros
 ```
 
 ```bash
@@ -578,7 +587,7 @@ ros2 launch lookie_bringup teleop.launch.py
 | 层级 | 内容 |
 | --- | --- |
 | 单元 | 长按/双击按住时序；挂载分解往返；臂映射中点 1:1（间距不一致仅警告）；校准检查各条拒绝/警告；工作空间钳制（可过中线、各臂独立）；追赶收敛/过快/超时；底盘背离保护（远离目标才触发，滞后但在靠近时不触发）；回 Home 判定（outcome 未受理/超时、旧 succeeded、快速完成、timed_out/aborted、held_by 被占）；失能各触发项 |
-| 状态机 | 全部迁移边；回Home 期间只有主扳机有效；失能仅 B 长按与主扳机有效；摇杆松开、底盘停稳后重记参考；Y 切换时刻参考 |
+| 状态机 | 全部迁移边；回Home 期间主扳机、底盘摇杆和 B 短按有效；失能仅 B 长按与主扳机有效；摇杆松开、底盘停稳或等待超时后重记参考；Y 切换时刻参考 |
 | 集成 | kstone_ros + xr_media_ros（或回放的 xr 数据）：A → 双臂激活 → 腰/底盘跟随 → 边界 → B 回 Home |
 | 实机前 | neo（`body_axes: [chassis, waist_z, waist_pitch]`）下头显驱动升降和 pitch，Y 切换后还驱动底盘前进和 yaw；trio 下 Y 切换；断开手柄 / 退出 XR 只停臂、不失能 |
 

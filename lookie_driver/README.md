@@ -15,7 +15,7 @@ Follow the [install guide](../docs/install.md) with [lookie_driver.repos](lookie
 | fold_ros | [fold_ros](https://github.com/AgilexOpensource/fold_ros): 4-DOF fold module (Trio) |
 | agx_arm_ctrl | [agx_arm_ros](https://github.com/agilexrobotics/agx_arm_ros/tree/ros2): AgileX arms |
 | lookie_neo_base | [lookie_neo_base](https://github.com/AgilexOpensource/lookie_neo_base) and [ugv_sdk](https://github.com/westonrobot/ugv_sdk): differential chassis (Neo) |
-| lookie_trio_base | [lookie_trio_base](https://github.com/AgilexOpensource/lookie_trio_base) and [ugv_sdk](https://github.com/westonrobot/ugv_sdk): omnidirectional chassis (Trio) |
+| lookie_trio_base | [lookie_trio_base](https://github.com/AgilexOpensource/lookie_trio_base) and ugv_sdk: omnidirectional chassis (Trio) |
 
 ## Models
 
@@ -44,7 +44,7 @@ The usual way is [lookie_bringup](../lookie_bringup/README.md), which reads `LOO
 ros2 launch lookie_bringup lookie.launch.py rviz:=false
 ```
 
-To start only the drivers, pass the files of `$LOOKIE_MODEL` directly:
+To start only the drivers, pass the files of `$LOOKIE_MODEL` directly. The example uses Trio; for Neo change `namespace:=trio` to `namespace:=neo`. The joint-bridge-only launch defaults to the driver namespace in its YAML:
 
 ```bash
 CFG=$(ros2 pkg prefix lookie_bringup)/share/lookie_bringup/config/$LOOKIE_MODEL
@@ -73,7 +73,7 @@ The files are checked against each other and the URDF before any node starts.
 
 With `trio`, the joint bridge merges module joint states into `/trio/driver/feedback/joint_states` and accepts commands on `/trio/driver/control/joint_states`. Joint names follow the Lookie URDF; Revo2 mimic joints (`*_distal`) are not bridged.
 
-The chassis node runs in `/trio/driver/chassis`. Its package is the one named by the `/**/chassis/<package>` section of `driver_ros.yaml`: [lookie_neo_base](https://github.com/AgilexOpensource/lookie_neo_base) on Neo, [lookie_trio_base](https://github.com/AgilexOpensource/lookie_trio_base) on Trio. It subscribes to `cmd_vel`, publishes `odom`, `battery_state` and `rc/joy` (plus `/diagnostics`), and broadcasts TF `trio/odom` → `trio/base_footprint`. The velocity signs and other chassis parameters are described in each package README.
+The chassis node runs in `/trio/driver/chassis`. Its package is the one named by the `/**/chassis/<package>` section of `driver_ros.yaml`: `lookie_neo_base` on Neo, `lookie_trio_base` on Trio. It subscribes to `cmd_vel`, publishes `odom`, `battery_state` and `rc/joy` (plus `/diagnostics`), and broadcasts TF `trio/odom` → `trio/base_footprint`. The package READMEs linked in the install table describe velocity signs and other chassis parameters.
 
 ## Configuration
 

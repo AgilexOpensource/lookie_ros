@@ -37,6 +37,8 @@ See the [install guide](docs/install.md), for the whole robot or a single packag
 
 ## Quick start
 
+Load the workspace environment in every launch terminal: `source ~/lookie_ws/install/setup.bash`; substitute your workspace path if different. With a venv, first activate the same environment as described in the [install guide](docs/install.md#build).
+
 1. Choose the model once. Each folder in [lookie_bringup/config](lookie_bringup/config) is one model:
 
    ```bash
@@ -74,6 +76,8 @@ See the [install guide](docs/install.md), for the whole robot or a single packag
    ```
 
 > **Important:** After changing code or configs under `src/`, rebuild (`python3 -m colcon build`) for the change to take effect. Otherwise the robot still runs the old version, and an old config with a new program can fail to start. Check with [check_install.py](docs/regression.md#1-does-the-install-match-the-source).
+
+Teleop starts in `NotReady`; after connecting the headset, long press B to return Home, then long press A to calibrate. For controls, use the quickstart link under VR teleop below.
 
 ### Without a robot
 
@@ -125,7 +129,7 @@ The debug server and the viewer page listen only on `127.0.0.1`; from another co
 - **A driver exits at startup**: its CAN interface is down or misnamed. Run `ros2 run lookie_bringup can_bind.sh --list`.
 - **RViz shows no robot**: no chassis odometry is running (for example `sim:=true`). Add `fixed_frame:=base_footprint` to step 3.
 - **kstone exits at startup with `unknown key` or `KST-E1xx`**: the config and the kstone version do not match, usually because only some repositories were updated or the workspace was not rebuilt. Pull every repository, rebuild, and run `python3 src/lookie_ros/scripts/check_install.py`.
-- **The robot does not follow kstone**: check `ros2 topic echo /trio/kstone/state --qos-durability transient_local` (`/neo/...` on Neo); it waits for joint feedback before it holds.
+- **The robot does not follow kstone**: check `ros2 topic echo /trio/kstone/state --qos-durability transient_local --full-length` (`/neo/...` on Neo); it waits for joint feedback before it holds.
 - **The headset page does not load**: the headset and the robot must be on the same network, and the certificate must be trusted.
 
 ## License

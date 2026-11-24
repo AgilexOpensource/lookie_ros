@@ -89,4 +89,4 @@ A PCIe key follows the card slot. A USB key follows the physical USB port, so pl
 - **`not in MAPPING`**: the key printed by `--scan` is missing from `MAPPING`, or the adapter moved to another slot or USB port.
 - **`shorthand key is ambiguous`**: the address has several ports; use the full `bus_addr:dev_id` key.
 - **`could not be brought up directly`**: no bitrate is known; add `:bitrate` to the entry or pass `--bitrate`.
-- **Driver reports a missing CAN device**: check `ip -br link show type can`; the name must match [Interfaces](#interfaces) exactly.
+- **Driver reports a missing CAN device**: check `ip -br link show type can`; the name must match the interface table above exactly.

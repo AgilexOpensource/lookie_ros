@@ -24,6 +24,7 @@ flowchart TB
     subgraph APP["Application"]
         XR["xr_media_ros<br/>/xr_media"]
         TELEOP["lookie_teleop<br/>/trio/lookie_teleop"]
+        MUX["twist_mux<br/>/trio/twist_mux"]
     end
 
     subgraph CTRL["Control: lookie_control"]
@@ -55,11 +56,12 @@ flowchart TB
     SIM -.-> RSP
     L1 -.rviz:=true.-> RVIZ
     L2 --> KSTONE
-    L3 --> XR & TELEOP
+    L3 --> XR & TELEOP & MUX
 
     HMD <--> XR
     XR --> TELEOP
-    TELEOP --> KSTONE
+    TELEOP -->|Pose / joints / Home| KSTONE
+    TELEOP -->|Chassis velocity| MUX --> KSTONE
     KSTONE --> BRIDGE
     KSTONE --> CHASSIS
     BRIDGE --> KSTONE
@@ -80,11 +82,11 @@ flowchart LR
     S1 --> S2["ros2 run lookie_bringup<br/>can_bind.sh"]
     S2 --> S3["Terminal 1<br/>lookie.launch.py<br/>drivers + robot_state_publisher<br/>(sim:=true uses joint sliders)"]
     S3 --> S4["Terminal 2<br/>kstone.launch.py<br/>holds current pose once feedback is fresh"]
-    S4 --> S5["Terminal 3<br/>teleop.launch.py<br/>xr_media_ros + lookie_teleop"]
+    S4 --> S5["Terminal 3<br/>teleop.launch.py<br/>xr_media_ros + lookie_teleop + twist_mux"]
     S5 --> S6["Open URL in headset<br/>trust certificate, enter VR"]
 ```
 
-Before starting any node, each launch file reads `bringup.yaml`, resolves its `package://` and relative paths, and checks the driver config against the URDF:
+Before starting any node, each launch file reads `bringup.yaml` and resolves its `package://` and relative paths; `lookie.launch.py` and the driver launch also check the driver config against the URDF:
 
 ```mermaid
 flowchart LR
@@ -111,13 +113,15 @@ flowchart LR
     end
 
     TEL["lookie_teleop<br/>calibration / mapping / safety / catch-up"]
+    TV["/trio/lookie_teleop/cmd_vel"]
+    MUX["/trio/twist_mux<br/>velocity source arbitration"]
 
     subgraph KS["/trio/kstone"]
         KD["discover · state<br/>(latched JSON)"]
         KP["&lt;M&gt;/control/pose"]
         KJ["control/joint"]
         KV["chassis/control/cmd_vel"]
-        KC["chassis/control/pose<br/>(omni base only, Trio)"]
+        KC["chassis/control/pose<br/>(omni / differential, no differential strafe)"]
         KH["&lt;M&gt;/home (srv)"]
         KF["&lt;M&gt;/feedback/pose"]
         ENG(("kstone engine<br/>whole-body IK + collision/CoM/null space"))
@@ -137,7 +141,8 @@ flowchart LR
     TEL --> XH
     KD --> TEL
     KF --> TEL
-    TEL --> KP & KJ & KV
+    TEL --> KP & KJ
+    TEL --> TV --> MUX --> KV
     TEL -.-> KC
     TEL --> ST["/trio/lookie_teleop/status"]
     TEL -.-> KH
@@ -154,11 +159,14 @@ flowchart LR
 
 ## 4. Control loop
 
+The default whole-robot launch forwards chassis velocity through `twist_mux`; `mux:=false` or a missing mux package makes teleop write the kstone velocity input directly. Pose targets bypass the mux. The teleop velocity source has a 0.15 s timeout and priority 100; inside kstone a fresh velocity command (including zero) outranks a pose target. After joystick release, a stopping zero stream lasts up to 2 s before teleop goes quiet.
+
 ```mermaid
 sequenceDiagram
     participant H as XR headset/controllers
     participant X as xr_media_ros
     participant T as lookie_teleop
+    participant M as twist_mux
     participant K as kstone_ros
     participant B as joint_bridge
     participant D as Module drivers/chassis
@@ -174,7 +182,9 @@ sequenceDiagram
     H->>X: Headset/controller poses and buttons
     X->>T: */transform, */buttons
     T->>T: Calibration, frame mapping, safety checks
-    T->>K: Pose/joint/velocity targets, home service
+    T->>K: Pose/joint targets, home service
+    T->>M: lookie_teleop/cmd_vel
+    M->>K: chassis/control/cmd_vel
     K->>K: Whole-body IK solve
     K->>B: driver/control/joint_states
     B->>D: Joint commands split per module
@@ -188,6 +198,7 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     BR["lookie_bringup"] --> DRV["lookie_driver"]
+    BR --> TM["twist_mux"]
     BR --> CTL["lookie_control"]
     BR --> TEL["lookie_teleop"]
     BR --> LD["lookie_description"]

@@ -89,4 +89,4 @@ PCIe 键对应板卡插槽，USB 键对应物理 USB 口，所以每个适配器
 - **`not in MAPPING`**：`--scan` 打印的键不在 `MAPPING` 里，或者适配器换了插槽或 USB 口。
 - **`shorthand key is ambiguous`**：该地址下有多个口，改用完整的 `bus_addr:dev_id` 键。
 - **`could not be brought up directly`**：没有可用波特率，给条目加上 `:bitrate` 或传 `--bitrate`。
-- **驱动报找不到 CAN 设备**：用 `ip -br link show type can` 检查，名称必须与[接口](#接口)完全一致。
+- **驱动报找不到 CAN 设备**：用 `ip -br link show type can` 检查，名称必须与上方接口表完全一致。

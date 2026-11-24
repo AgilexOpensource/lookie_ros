@@ -15,7 +15,7 @@
 | fold_ros | [fold_ros](https://github.com/AgilexOpensource/fold_ros)：4 自由度折叠模组（Trio） |
 | agx_arm_ctrl | [agx_arm_ros](https://github.com/agilexrobotics/agx_arm_ros/tree/ros2)：松灵机械臂 |
 | lookie_neo_base | [lookie_neo_base](https://github.com/AgilexOpensource/lookie_neo_base) 和 [ugv_sdk](https://github.com/westonrobot/ugv_sdk)：差速底盘（Neo） |
-| lookie_trio_base | [lookie_trio_base](https://github.com/AgilexOpensource/lookie_trio_base) 和 [ugv_sdk](https://github.com/westonrobot/ugv_sdk)：全向底盘（Trio） |
+| lookie_trio_base | [lookie_trio_base](https://github.com/AgilexOpensource/lookie_trio_base) 和 ugv_sdk：全向底盘（Trio） |
 
 ## 机型
 
@@ -44,7 +44,7 @@ ros2 run lookie_bringup can_bind.sh
 ros2 launch lookie_bringup lookie.launch.py rviz:=false
 ```
 
-只启动驱动时，直接传入 `$LOOKIE_MODEL` 的文件：
+只启动驱动时，直接传入 `$LOOKIE_MODEL` 的文件。下面以 Trio 为例；Neo 的 `namespace:=trio` 改为 `namespace:=neo`，只启动关节桥时默认使用 YAML 中的驱动命名空间：
 
 ```bash
 CFG=$(ros2 pkg prefix lookie_bringup)/share/lookie_bringup/config/$LOOKIE_MODEL
@@ -73,7 +73,7 @@ ros2 launch lookie_driver joint_bridge.launch.py bridge_config:=$CFG/driver_join
 
 以 `trio` 为例，关节桥把各模组的关节状态合并发布到 `/trio/driver/feedback/joint_states`，并在 `/trio/driver/control/joint_states` 接收命令。关节名与 Lookie URDF 一致；Revo2 的 mimic 关节（`*_distal`）不经过关节桥。
 
-底盘节点运行在 `/trio/driver/chassis` 下，所用的包由 `driver_ros.yaml` 中的 `/**/chassis/<package>` 段指定：Neo 为 [lookie_neo_base](https://github.com/AgilexOpensource/lookie_neo_base)，Trio 为 [lookie_trio_base](https://github.com/AgilexOpensource/lookie_trio_base)。它订阅 `cmd_vel`，发布 `odom`、`battery_state` 和 `rc/joy`（以及 `/diagnostics`），并广播 TF `trio/odom` → `trio/base_footprint`。速度符号等底盘参数见各包 README。
+底盘节点运行在 `/trio/driver/chassis` 下，所用的包由 `driver_ros.yaml` 中的 `/**/chassis/<package>` 段指定：Neo 为 `lookie_neo_base`，Trio 为 `lookie_trio_base`。它订阅 `cmd_vel`，发布 `odom`、`battery_state` 和 `rc/joy`（以及 `/diagnostics`），并广播 TF `trio/odom` → `trio/base_footprint`。速度符号等底盘参数见安装表中链接的各包 README。
 
 ## 配置
 

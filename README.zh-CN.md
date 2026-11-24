@@ -37,6 +37,8 @@ Lookie 机器人（Trio 和 Neo）的 ROS 2 功能包：驱动、基于 kstone �
 
 ## 快速开始
 
+每个启动终端先加载工作空间环境：`source ~/lookie_ws/install/setup.bash`；工作空间不叫 `lookie_ws` 时替换路径。使用虚拟环境时按[安装指南](docs/install.zh-CN.md#编译)先激活同一个环境。
+
 1. 选定机型，只需一次。[lookie_bringup/config](lookie_bringup/config) 下每个文件夹对应一个机型：
 
    ```bash
@@ -74,6 +76,8 @@ Lookie 机器人（Trio 和 Neo）的 ROS 2 功能包：驱动、基于 kstone �
    ```
 
 > **重要：** 修改 `src/` 下的代码或配置后必须重新编译（`python3 -m colcon build`）才会生效，否则机器人运行的仍是旧版本，旧配置与新程序不匹配时可能直接启动失败。用 [check_install.py](docs/regression.zh-CN.md#1-install-是否与源码一致) 检查。
+
+首次启动遥操作会处于 `NotReady`；连接头显后先长按 B 回 Home，再长按 A 校准。详细按键见下方“VR 遥操作”的快速上手链接。
 
 ### 没有真机时
 
@@ -125,7 +129,7 @@ ros2 launch lookie_bringup kstone.launch.py debug_port:=7311
 - **驱动启动后立即退出**：对应的 CAN 接口未启用或名称不对，运行 `ros2 run lookie_bringup can_bind.sh --list` 检查。
 - **RViz 中看不到机器人**：没有底盘里程计（例如 `sim:=true`）。第 3 步加上 `fixed_frame:=base_footprint`。
 - **kstone 启动即退出，报 `unknown key` 或 `KST-E1xx`**：配置与 kstone 版本不一致，通常是只更新了部分仓库或没有重新编译。拉取全部仓库后重新编译，并运行 `python3 src/lookie_ros/scripts/check_install.py`。
-- **机器人不跟随 kstone**：用 `ros2 topic echo /trio/kstone/state --qos-durability transient_local` 查看状态（Neo 为 `/neo/...`）；kstone 收到关节反馈后才会保持位姿。
+- **机器人不跟随 kstone**：用 `ros2 topic echo /trio/kstone/state --qos-durability transient_local --full-length` 查看状态（Neo 为 `/neo/...`）；kstone 收到关节反馈后才会保持位姿。
 - **头显页面打不开**：头显和机器人需在同一网络，并且已信任证书。
 
 ## 许可证

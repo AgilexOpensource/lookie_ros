@@ -24,6 +24,7 @@ flowchart TB
     subgraph APP["应用层"]
         XR["xr_media_ros<br/>/xr_media"]
         TELEOP["lookie_teleop<br/>/trio/lookie_teleop"]
+        MUX["twist_mux<br/>/trio/twist_mux"]
     end
 
     subgraph CTRL["控制层：lookie_control"]
@@ -55,11 +56,12 @@ flowchart TB
     SIM -.-> RSP
     L1 -.rviz:=true.-> RVIZ
     L2 --> KSTONE
-    L3 --> XR & TELEOP
+    L3 --> XR & TELEOP & MUX
 
     HMD <--> XR
     XR --> TELEOP
-    TELEOP --> KSTONE
+    TELEOP -->|位姿 / 关节 / Home| KSTONE
+    TELEOP -->|底盘速度| MUX --> KSTONE
     KSTONE --> BRIDGE
     KSTONE --> CHASSIS
     BRIDGE --> KSTONE
@@ -80,11 +82,11 @@ flowchart LR
     S1 --> S2["ros2 run lookie_bringup<br/>can_bind.sh"]
     S2 --> S3["终端1<br/>lookie.launch.py<br/>驱动 + robot_state_publisher<br/>(sim:=true 用关节滑块代替驱动)"]
     S3 --> S4["终端2<br/>kstone.launch.py<br/>收到新鲜反馈后保持当前位姿"]
-    S4 --> S5["终端3<br/>teleop.launch.py<br/>xr_media_ros + lookie_teleop"]
+    S4 --> S5["终端3<br/>teleop.launch.py<br/>xr_media_ros + lookie_teleop + twist_mux"]
     S5 --> S6["头显打开 URL<br/>信任证书, 进入 VR"]
 ```
 
-每个 launch 启动前都会读取 `bringup.yaml`，解析其中的 `package://`/相对路径，并对照 URDF 校验驱动配置：
+每个 launch 启动前都会读取 `bringup.yaml` 并解析其中的 `package://`/相对路径；`lookie.launch.py` 和驱动 launch 还会对照 URDF 校验驱动配置：
 
 ```mermaid
 flowchart LR
@@ -111,13 +113,15 @@ flowchart LR
     end
 
     TEL["lookie_teleop<br/>标定 / 映射 / 安全 / 追赶"]
+    TV["/trio/lookie_teleop/cmd_vel"]
+    MUX["/trio/twist_mux<br/>速度源仲裁"]
 
     subgraph KS["/trio/kstone"]
         KD["discover · state<br/>(latched JSON)"]
         KP["&lt;M&gt;/control/pose"]
         KJ["control/joint"]
         KV["chassis/control/cmd_vel"]
-        KC["chassis/control/pose<br/>(仅全向底盘, Trio)"]
+        KC["chassis/control/pose<br/>(全向 / 差速，差速不横移)"]
         KH["&lt;M&gt;/home (srv)"]
         KF["&lt;M&gt;/feedback/pose"]
         ENG(("kstone 引擎<br/>全身 IK + 碰撞/质心/零空间"))
@@ -137,7 +141,8 @@ flowchart LR
     TEL --> XH
     KD --> TEL
     KF --> TEL
-    TEL --> KP & KJ & KV
+    TEL --> KP & KJ
+    TEL --> TV --> MUX --> KV
     TEL -.-> KC
     TEL --> ST["/trio/lookie_teleop/status"]
     TEL -.-> KH
@@ -154,11 +159,14 @@ flowchart LR
 
 ## 4. 控制闭环
 
+默认整机启动经 `twist_mux` 转发底盘速度；`mux:=false` 或未安装该包时，遥操作直接写 kstone 的速度入口。位姿目标不经过 mux。遥操作速度源超时为 0.15 s、优先级为 100；kstone 内部的新鲜速度指令（含零速）优先于位姿目标。摇杆归零后仍有最多 2 s 的停车零速流，之后才静默。
+
 ```mermaid
 sequenceDiagram
     participant H as XR 头显/手柄
     participant X as xr_media_ros
     participant T as lookie_teleop
+    participant M as twist_mux
     participant K as kstone_ros
     participant B as joint_bridge
     participant D as 各模组驱动/底盘
@@ -174,7 +182,9 @@ sequenceDiagram
     H->>X: 头显、手柄位姿与按键
     X->>T: */transform, */buttons
     T->>T: 标定、坐标映射、安全检查
-    T->>K: 位姿/关节/速度目标, home 服务
+    T->>K: 位姿/关节目标, home 服务
+    T->>M: lookie_teleop/cmd_vel
+    M->>K: chassis/control/cmd_vel
     K->>K: 全身 IK 求解
     K->>B: driver/control/joint_states
     B->>D: 按模组拆分关节命令
@@ -188,6 +198,7 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     BR["lookie_bringup"] --> DRV["lookie_driver"]
+    BR --> TM["twist_mux"]
     BR --> CTL["lookie_control"]
     BR --> TEL["lookie_teleop"]
     BR --> LD["lookie_description"]

@@ -13,11 +13,13 @@ python3 src/lookie_ros/scripts/check_install.py            # 工作空间内全�
 python3 src/lookie_ros/scripts/check_install.py lookie_bringup kstone_ros -v
 ```
 
-- `OK`：install 与源码一致。
+- `OK`：被检查的运行文件未发现差异。
 - `STALE`：Python 模块、launch、config 或 URDF 内容不同，或有文件未安装。
 - `CHECK`：只有编译型源码（C++、CMake、消息）比上次编译新。git 拉取或拷贝也会更新时间，需要人工确认。
 
 有 `STALE` 或 `CHECK` 时退出码为 1。
+
+检查范围为运行文件的内容和编译型源码的修改时间，不包含文档、依赖版本或 git 状态。
 
 ## 2. 编译与测试
 
@@ -35,6 +37,8 @@ colcon test-result --verbose
 `kstone.launch.py` 启动时检查关节桥 `feedback_timeout_s` 是否不大于 `kstone.yaml` 的 `feedback_timeout_s`。不满足时打印警告但仍启动。关节桥会给缓存的反馈重新打时间戳，驱动掉线后，kstone 要经过两个超时之和才让该组脱离控制，期间按冻结的关节位置继续计算；关节桥超时越大，这段时间越长。完整的判断链和延迟见[反馈新鲜度与超时链](architecture.zh-CN.md#6-反馈新鲜度与超时链)。
 
 ## 改动验收清单
+
+启动检查还要求头部/升降/折叠驱动的 `feedback_timeout` 至少比 kstone 的 `feedback_timeout_s` 大 0.05 s；不满足时警告但仍启动。此间隔用于让急停恢复或重新上电后的反馈中断被 kstone 识别，从新实测位置重新接入。
 
 1. 改动前：`check_install.py` 全部 `OK`，测试通过。
 2. 改动后：测试通过。

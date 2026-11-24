@@ -15,12 +15,13 @@ Lookie 整机启动包：驱动（可选 RViz，无真机时用关节滑块）�
 ```bash
 sed -i '/^export LOOKIE_MODEL=/d' ~/.bashrc
 echo 'export LOOKIE_MODEL=lookie__pf-lookie_trio_r01__ee-revo2std_r01' >> ~/.bashrc
+source ~/.bashrc
 ```
 
 | launch 文件 | 启动内容 |
 | --- | --- |
 | `lookie.launch.py` | 驱动、`robot_state_publisher`，可选 RViz |
-| `kstone.launch.py` | kstone_ros 全身控制；可用 `ros2 topic echo /trio/kstone/state --qos-durability transient_local` 查看状态 |
+| `kstone.launch.py` | kstone_ros 全身控制；可用 `ros2 topic echo /trio/kstone/state --qos-durability transient_local --full-length` 查看状态 |
 | `teleop.launch.py` | VR 遥操作，见 [VR 遥操作](#vr-遥操作) |
 
 先启用 [lookie_driver](../lookie_driver/README.zh-CN.md#can-接口) 中列出的 CAN 接口，再按上表顺序各开一个终端启动。
@@ -54,9 +55,17 @@ ros2 launch lookie_bringup lookie.launch.py sim:=true rviz:=true fixed_frame:=ba
 - `rviz`：默认 `false`；`true` 时打开 RViz。`robot_state_publisher` 始终发布 TF。
 - `fixed_frame`：RViz 的 Fixed Frame，不含命名空间，默认 `odom`。没有底盘里程计时用 `base_footprint`。
 
+### kstone.launch.py 参数
+
+`model`、`config`、`namespace` 同上，另有：
+
+- `realtime`：默认 `inherit`，沿用引擎配置；`true` / `false` 覆盖它。
+- `debug_port`：默认 `inherit`；`7311` 开启调试服务，`0` 关闭。
+- `use_sim_time`：默认 `false`；只有存在 `/clock` 发布者时才设为 `true`，关节滑块仿真本身不发布 `/clock`。
+
 ## 命名空间
 
-所有 launch 都有 `namespace` 参数，为空时取 `bringup.yaml` 中的 `namespace`（`trio` 或 `neo`）。全部节点和话题都在它下面，改一个值整套系统跟着变。以 `trio` 为例：
+所有 launch 都有 `namespace` 参数，为空时取 `bringup.yaml` 中的 `namespace`（`trio` 或 `neo`）。机器人节点和相对话题跟随它；共用 XR 使用 `/xr_media`，底盘 `/diagnostics` 为绝对话题。以 `trio` 为例：
 
 | 部分 | 节点与话题 |
 | --- | --- |
@@ -65,6 +74,7 @@ ros2 launch lookie_bringup lookie.launch.py sim:=true rviz:=true fixed_frame:=ba
 | joint bridge | `/trio/driver/feedback/joint_states`、`/trio/driver/control/joint_states` |
 | kstone_ros | `/trio/kstone/...` |
 | 遥操作 | `/trio/lookie_teleop` |
+| 速度仲裁 | `/trio/twist_mux`；输入 `/trio/lookie_teleop/cmd_vel`，输出 `/trio/kstone/chassis/control/cmd_vel` |
 | XR | `/xr_media`（共用，不加命名空间） |
 
 TF 坐标系使用前缀 `<namespace>/`。kstone 的世界坐标系是 `trio/odom`。底盘驱动广播 `trio/odom` → `trio/base_footprint`。URDF 的根是 `base_footprint`（底盘正下方的地面点），`robot_state_publisher` 从这里接续 TF 树，kstone 也直接把这份里程计当作根位姿读取。RViz 的 Fixed Frame 为 `trio/odom`，可以看到底盘运动。没有底盘驱动或其他 `odom` 来源时，`trio/odom` 不存在，RViz 无法显示机器人，此时用 `fixed_frame:=base_footprint`。
@@ -83,7 +93,8 @@ config/
 │   ├── kstone.yaml               # lookie_control：kstone 引擎配置
 │   └── teleop.yaml               # lookie_teleop：机型相关的值
 ├── lookie_teleop/common.yaml     # 所有机型共用
-└── xr_media_ros/xr_media.yaml    # 所有机型共用
+├── xr_media_ros/xr_media.yaml    # 所有机型共用
+└── twist_mux.yaml               # 底盘速度源、优先级和超时
 ```
 
 `bringup.yaml` 中的路径为 `package://<pkg>/<relative>`、绝对路径，或相对 `bringup.yaml` 的路径：
@@ -118,6 +129,8 @@ ros2 launch lookie_bringup teleop.launch.py
 
 `twist_mux` 位于 kstone 的底盘速度入口之前：遥操作发布到 `lookie_teleop/cmd_vel`，由它转发到 `kstone/chassis/control/cmd_vel`。各速度源及其优先级、超时在 `config/twist_mux.yaml`，加一路源只需在那里加一项。遥操作空闲时不发零速，所以话题上没有活跃速度源时，其他源不会被零速压住。未安装 `twist_mux` 时打警告并回退为遥操作直接写 kstone 的底盘入口（`mux:=false` 同样如此）。
 
+当前遥操作源的优先级为 100、超时为 0.15 s。摇杆归零后继续发停车零速，直到停稳或最多等待 2 s；这期间仍占用该速度源。kstone 的速度租约为 0.25 s，新鲜速度（含零速）优先于位姿目标。未启用 mux 时，kstone 速度入口只能有一个发布者；其他源不要绕过 mux 直接写底盘驱动。
+
 参数：`model`、`config`、`namespace`（同上），`xr`、`teleop`、`mux`（默认 `true`，`false` 时不启动对应节点）。
 
 `bringup.yaml` 的 `teleop` 段先指定 `config/xr_media_ros/` 与 `config/lookie_teleop/` 下的共用文件，再指定本机型的 `teleop.yaml`：
@@ -130,4 +143,4 @@ teleop:
     - teleop.yaml
 ```
 
-`teleop.yaml` 存放机型相关的值：`body_axes`（头显可驱动的轴）与末端执行器（`ee_modules`、`ee_open`、`ee_close`）。
+`teleop.yaml` 存放机型相关的值：`body_axes`、`controller_tcp`、`lean_pivot_m`、末端执行器，以及 Neo 的腰部关节、Home 模块、范围与速度覆盖值。有效参数按“节点默认值 → common.yaml → 机型 teleop.yaml → launch 覆盖”确定。

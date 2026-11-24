@@ -36,7 +36,6 @@ flowchart LR
         RT["right_controller/transform"]
         LB["left_controller/buttons"]
         RB["right_controller/buttons"]
-        ST["status"]
     end
     subgraph TP["lookie_teleop"]
         IN["Input layer<br/>freshness / jump detection"]
@@ -54,7 +53,7 @@ flowchart LR
         KH["home / M/home"]
         KF["M/feedback/pose"]
     end
-    HT & LT & RT & ST --> IN
+    HT & LT & RT --> IN
     LB & RB --> BTN
     IN --> SM
     BTN --> SM
@@ -66,6 +65,8 @@ flowchart LR
 ```
 
 ### 2.1 Subscriptions
+
+The diagram shows the node's default direct interfaces. With `twist_mux` in the whole-robot launch, velocity goes to `lookie_teleop/cmd_vel` and reaches kstone through the mux; pose and joint targets remain direct. For namespaces and actual topics, see [lookie_bringup](../../lookie_bringup/README.md#vr-teleop).
 
 | Topic | Type | Purpose |
 | --- | --- | --- |
@@ -96,27 +97,27 @@ Fields used from `/kstone/state`:
 | `/kstone/left_arm_pose/control/pose` | `PoseStamped`, frame `chassis_base_link` | Left arm end target (gripper `l_gripper_tip`, Revo2 hand `l_palm`) |
 | `/kstone/right_arm_pose/control/pose` | Same as above | Right arm end target (`r_gripper_tip` / `r_palm`) |
 | `/kstone/torso_pose/control/pose` | `PoseStamped`, frame `chassis_base_link` | Waist `chest_link` target |
-| `/kstone/chassis/control/pose` | `PoseStamped`, frame `world_frame` | Chassis planar pose target (**omni only**, while headset-driven) |
-| `/kstone/chassis/control/cmd_vel` | `Twist` | Joystick chassis velocity (omni x/y/yaw, differential x/yaw); see the publishing rules below |
-| `/kstone/control/joint` | `JointState`, empty frame_id | End effector joint targets (routed by name to the modules in `ee_modules`, e.g. `*_hand_joint`, `*_gripper_joint`) |
+| `/kstone/chassis/control/pose` | `PoseStamped`, frame `world_frame` | Headset-driven planar chassis pose target (omni x/y/yaw, differential forward/back/yaw) |
+| `/kstone/chassis/control/cmd_vel` (default) | `Twist` | Joystick chassis velocity (omni x/y/yaw, differential x/yaw); `chassis_cmd_topic` can select a mux input instead |
+| `/kstone/control/joint` | `JointState`, empty frame_id | End effector joint targets, plus waist joint targets when `torso_joints` is configured (§11) |
 | `/xr_media/{left,right}_controller/haptic` | `Float32MultiArray` `[intensity, duration ms]` | Controller haptic confirmation (§5) |
 | `~/status` | `String` JSON | Teleop state, rejection / disable reason, per-arm sub-states (UI / logging) |
 
 Publishing rules:
 
-- All commands with a header are stamped with **this node's `now()`**; the XR data timestamps are not reused (kstone rejects timestamps older than 0.5 s or in the future).
-- Chassis `cmd_vel`: published with the main loop while a joystick commands it; after the joysticks return to centre, zeros keep flowing until the measured pose has settled (0.3 s, at most 2 s) and then publishing **stops**, leaving no message from this node on the topic. kstone zeroes its output on command timeout instead of decelerating, so the zero tail has to cover the chassis deceleration; staying quiet when idle keeps another velocity source on the same topic (e.g. navigation, through twist_mux) from being overridden by idle zeros. `cmd_vel` is not published while the headset drives the chassis pose, so the two commands never share the kstone command slot.
+- All commands with a header are stamped with **this node's `now()`**; XR timestamps are not reused. kstone_ros checks stamp continuity per command topic: regression or a difference greater than `command_timeout_s` between stamp progression and elapsed receipt time is rejected, not the stamp's absolute age against the node clock. See [kstone_ros interfaces](https://github.com/AgilexOpensource/kstone_ros/blob/main/docs/interfaces.md#node-parameters).
+- Chassis `cmd_vel`: published with the main loop while a joystick commands it; after release, zeros continue until the measured pose settles for 0.3 s, or the 2 s wait expires, then publishing **stops**. Idle silence prevents continuous zeros from blocking another mux velocity source, but the stopping zero stream still owns that source while it lasts. Headset pose targets may be published alongside stopping zeros; inside kstone a fresh velocity command (including zero) outranks a pose target. Once the stream ends and its lease expires, continuously rewritten pose targets resume. The mux arbitrates velocity sources, not pose targets.
 
 ### 2.3 Service calls
 
 | Service | Purpose |
 | --- | --- |
-| `/kstone/M/home` (`Trigger`) | Return Home individually for each module in `home_modules` (pose modules only; end effectors do not return Home) |
+| `/kstone/M/home` (`Trigger`) | Return Home individually for each module in `home_modules` (arm pose modules; configured joint modules for the Neo waist, §11; no end effectors) |
 | `/kstone/home_cancel` (`Trigger`) | B short press during Homing: cancel every running Home in one call; each module stops smoothly where it is and holds there |
 | ~~`/kstone/home`~~ | **Not used**: it homes the modules that "currently hold control"; the holder may be `*_arm_joint` / `torso_joint`, which would run the joint Home |
 | ~~`/kstone/M/enable`~~ | **Not used**: disabling teleop only stops publishing commands and does not change the module enable state, so no extra action is needed on recovery |
 
-The response `accepted request_id=N` **only means the request is queued**; completion is determined from `~/state`. Teleop uses pose mode only, so it uses only the Home of the pose modules; after a pose module returns Home it holds control itself, so the first subsequent pose target is not delayed by a joint module holding control.
+The response `accepted request_id=N` **only means the request is queued**; completion is determined from `~/state`. Arms use pose-module Home, while the Neo waist uses its configured joint modules; subsequent targets go to the same controlling modules rather than being delayed by another module holding control.
 
 ## 3. Model profile
 
@@ -129,12 +130,12 @@ No model name is written in the node. The parameter `body_axes` (default: `chass
 | Headset → waist Z | Yes | Yes (lean-compensated height; the arms cover the slow lift and the rest below its lower end) |
 | Headset → waist pitch | Yes | Yes |
 | Headset → waist yaw | Yes (waist mode) | No |
-| Y long press switch | Yes | Yes (waist ↔ chassis yaw; default waist) |
+| Y long press switch | Yes | Yes (waist ↔ chassis forward/back/yaw; default waist) |
 | Left joystick | x forward/backward, y left/right translation | Forward/backward only (`linear.y` is ignored by kstone; teleop also sets it to 0) |
 | Right joystick x | Chassis turning | Chassis turning |
 | Right joystick y (X switches Z/pitch) | Yes | Yes (both Z offset and pitch offset adjustable) |
 
-Internally this is represented as an "enabled axis set": trio = `{chassis, waist_x, waist_z, waist_pitch, waist_yaw}`, neo = `{waist_pitch}`. The mapping code only checks whether an axis is enabled and has no model-specific branches.
+Internally this is represented as an "enabled axis set": trio = `{chassis, waist_x, waist_z, waist_pitch, waist_yaw}`, neo = `{chassis, waist_z, waist_pitch}`. The mapping code only checks whether an axis is enabled and has no model-specific branches.
 
 ## 4. State machine
 
@@ -184,7 +185,7 @@ stateDiagram-v2
 
 - **Held**: holds the arm's last target in $F_t$ (taken from feedback on the first frame after enabling) and keeps publishing it; when waist Z changes the arm rises and lowers with the waist, and when waist pitch changes it stays fixed in the chassis frame.
 - **CatchUp**: interpolates from the current end pose towards the mapped target, see §9.
-- **Active**: publishes the mapped target directly (after the workspace clamp and rate limiting).
+- **Active**: publishes the workspace-clamped mapped target directly; teleop does not rate-limit it, and kstone applies the velocity limits (§9.3).
 - **Controller lost** (transform / joy timeout on that side, jump, too far from the headset): only that arm is stopped (target held), without disabling; after the controller recovers, the grip trigger must be double-pressed and held again to take over, and button presses during the loss are discarded. On a headset data timeout both arms are Held (likewise a new double-press is required, without disabling); a headset jump / timestamp regression causes a full disable (§12).
 - **Headset drive condition**: both arms are `Active` (CatchUp excluded). The instant of the transition from "not both arms engaged" to "both arms engaged" is called the **both-arms-engaged instant**.
 
@@ -218,14 +219,18 @@ stateDiagram-v2
 ```mermaid
 flowchart LR
     S{"Joystick input?"} -- "Yes" --> J["Send cmd_vel<br/>pause headset→chassis"]
-    S -- "No" --> W{"Joystick input in the previous frame?"}
-    W -- "Yes" --> R["Re-record the chassis reference"] --> H
-    W -- "No" --> H{"Both arms engaged and chassis mode (trio)?"}
+    S -- "No" --> W{"Stopping zero stream active?"}
+    W -- "Yes" --> Q{"Settled for 0.3 s or waited 2 s?"}
+    Q -- "No" --> V["Keep sending zeros"] --> H
+    Q -- "Yes" --> R["Stop sending zeros<br/>Re-record chassis reference"] --> H
+    W -- "No" --> H{"Both arms engaged and chassis mode?"}
     H -- "Yes" --> P["Headset drives the chassis pose"]
-    H -- "No" --> Z["No cmd_vel (idle)"]
+    H -- "No" --> Z["No chassis pose target"]
 ```
 
 ## 6. Frames and mount correction
+
+The diagram covers Enabled cycles with healthy feedback. kstone suppresses concurrent headset pose targets while the zero stream is fresh; when no zero stream is active and headset-drive conditions are not met, neither chassis target is published. For stale chassis feedback, see §12.
 
 ### 6.1 Frames
 
@@ -332,7 +337,7 @@ $$C_t = C_{ref}\;\oplus\;\mathrm{planar}\big(F_h(ref)^{-1}F_h(t)\big)$$
 - Yaw reversal prevention: the target yaw leads the chassis feedback by at most 150°. The yaw of the pose target is wrapped to ±180° and kstone turns in the shortest direction, so a lead of more than 180° would make the chassis turn the opposite way; this is not triggered during normal following.
 - Divergence protection: disables when the error to the desired pose exceeds 0.2 m / 15° and the chassis feedback keeps moving **away** from the desired pose (receding speed > 0.05 m/s or 0.1 rad/s) for 1.5 s (when the operator sways quickly left and right, the reverse motion of the lagging chassis was measured to last up to about 0.7 s, which should not trigger). This is used to detect cases such as a reversed chassis axis. A chassis blocked by an obstacle and not moving does not count as diverging and does not cause a disable.
 - $F_h$ here is the lean-compensated hip point (§8.1, `lean_pivot_m`), so leaning to reach does not walk the base.
-- Differential (neo): only the operator's walk along their own heading moves the target, along the target heading, at most `chassis_vx_max`; sideways steps are dropped. Each cycle the part of the target beside the measured base is dropped too, so a base still turning never gets a goal it cannot drive to. kstone plans distance along the heading and yaw together (drives while it turns, never sideways); it drives a Ruckig profile on its own reference pose (no odometry delay model), latches at the goal when the profile ends inside the tolerance (neo 1 cm / 1°) until a new goal comes and corrects from rest only beyond it; its accelerations match the measured base (neo linear 0.6 up / 1.0 down m/s², angular 0.65 rad/s²).
+- Differential (neo): only the operator's walk along their own heading moves the target, along the target heading, at most `chassis_vx_max`; sideways steps are dropped. Each cycle the part of the target beside the measured base is dropped too, so a base still turning never gets a goal it cannot drive to. kstone plans distance along the heading and yaw together (drives while it turns, never sideways); it drives a Ruckig profile on its own reference pose (no odometry delay model), latches at the goal when the profile ends inside the tolerance (neo 1 cm / 1°) until a new goal comes and corrects from rest only beyond it. Limits come from the selected model's `kstone.yaml`: Neo gripper velocity 1.0 m/s / 2.0 rad/s, linear acceleration/deceleration 1.0 / 1.5 m/s², angular acceleration/deceleration both 1.5 rad/s²; Neo Revo2 retains velocity 0.5 m/s / 1.0 rad/s, linear acceleration/deceleration 0.6 / 1.0 m/s², angular acceleration/deceleration both 0.65 rad/s².
 - Published to `chassis/control/pose` (`world_frame`).
 
 ### 8.4 Reference recording instants
@@ -342,7 +347,7 @@ $$C_t = C_{ref}\;\oplus\;\mathrm{planar}\big(F_h(ref)^{-1}F_h(t)\big)$$
 | Arms $M_0, m_0, C_i$ | Yes | — | — | — |
 | Waist Z / pitch ($z_0,\theta_0$…) | Yes | — | — | — |
 | Waist x, yaw | Yes | Yes | Yes | — |
-| Chassis $C_{ref}, F_h(ref)$ | Yes | Yes | Yes | Yes |
+| Chassis $C_{ref}, F_h(ref)$ | Yes | Yes | Yes | After settling or wait timeout |
 
 > The both-arms-engaged instant is defined as "the moment headset control changes from stopped to effective": that is, when the second grip trigger enters Active; if both sides are already Active when Y switches from waist to chassis, the Y switch instant is used.
 > After the joystick is released, zero velocity is sent first, and the chassis reference is re-recorded and control handed back to the headset only once the chassis has settled (pose change < 5 mm / 0.5° within 0.3 s, waiting at most 2 s). The chassis has a response delay of about 0.2 s and coasts while decelerating; if the reference were recorded at the instant of release, headset pose control would pull back the distance the joystick had just covered.
@@ -367,7 +372,7 @@ $$C_t = C_{ref}\;\oplus\;\mathrm{planar}\big(F_h(ref)^{-1}F_h(t)\big)$$
 
 ```mermaid
 flowchart LR
-    A["Controller pose h_i"] --> B["F_h transform<br/>p_i"] --> C["Mapping<br/>e_i, Q_i"] --> D["Workspace clamp Π"] --> E["Catch-up / rate limiting"] --> G["→ chassis_base_link<br/>publish"]
+    A["Controller pose h_i"] --> B["F_h transform<br/>p_i"] --> C["Mapping<br/>e_i, Q_i"] --> D["Workspace clamp Π"] --> E["Rate-limited catch-up / direct Active output"] --> G["→ chassis_base_link<br/>publish"]
 ```
 
 ### 9.2 Workspace (in the robot torso heading frame $F_t$)
@@ -383,7 +388,7 @@ The arms have a single position constraint: a cube shared by both arms, with lef
 - **The reference point is fixed relative to the torso**: the cube is expressed in $F_t$ and follows the waist position and yaw (the origin of $F_t$ is the `chest_link` target), and does not change after A; every later release and re-engagement of the grip trigger uses the same cube, without taking the point again.
 - **When it is lifted**: evaluated separately for each arm. Clamping starts once the grip trigger engages (double-press and hold); it is lifted the first time the mapped target falls inside the cube, after which that arm follows freely and is no longer clamped even if the controller reaches outside the cube again; engaging again after the grip trigger is released or the controller on that side is lost restarts the clamping. The purpose is that an unreasonable controller position at engagement (too far away) does not pull the arm out, not to limit the range of motion during teleoperation.
 - Clamp $\Pi$: each axis is truncated to $[\mathbf c - d, \mathbf c + d]$. The cube is a convex set, and per-axis truncation is the nearest-point projection, which is continuous and idempotent. When the clamp is lifted the mapped target is inside the cube and equals the clamp result, so the published value does not jump.
-- Catch-up / rate limiting moves from the previous frame's published value towards the (clamped) target every frame; no second projection is needed.
+- Catch-up moves from the previous published value towards the (clamped) target at a limited rate each frame, without another projection; Active publishes the mapped target directly.
 - **Only position is constrained, not orientation** (orientation is handled by the WBC weights).
 - Being constrained **does not trigger a disable**; it is only flagged as `clamped` in `~/status`.
 - On the first engagement / re-engagement, if the mapped target is outside the cube, the catch-up target is the clamped point, and the arm stops on the boundary waiting for the user's hand to come back.
@@ -432,14 +437,14 @@ sequenceDiagram
     end
 ```
 
-- `home_modules` default: `torso_pose, left_arm_pose, right_arm_pose`. Only the pose module Home is used, not the joint Home of `*_arm_joint`; the end effectors do not return Home (when needed, motion control can home them separately). With `torso_joints` set, the waist is driven in joint space (a generic interface, not model-specific): each entry is `role:joint` with role `x`, `z`, `pitch` or `yaw`, written `role:-joint` when the joint turns against the waist convention (x forward, z up, pitch > 0 leaning forward, yaw > 0 left). The waist is sent as joint targets on `control/joint` with feedback from `feedback/joint_states`; roles without a joint read 0 and their `waist_*` axes are not driven by the headset; each role is bounded by its joint range from discover (x and z as absolute ranges, pitch and yaw intersected with `waist_*_limits_deg`). Lookie neo sets `torso_joints: ["z:torso_joint1", "pitch:torso_joint2"]`: kstone has no `torso_pose` there but two joint targets `torso_lift_joint` / `torso_pitch_joint` (same QP level), which are homed instead; the headset height (lean-compensated with `lean_pivot_m`, §8.1, so leaning alone does not move the lift) plus the right stick in z mode drive the lift, the lean drives the pitch. The arm targets are absolute in `chassis_base_link` and move with the lift target (`waist_z_rate`), so the arms cover the slow physical lift. Below the lift's lower joint limit the active arm targets keep going down (`arm_dz`, same rate), down to `waist_z_range` (neo: the Home gripper tip down to 0.04 m below the floor); the upper limit is not compensated, and the stick moves only the lift.
+- `home_modules` default: `torso_pose, left_arm_pose, right_arm_pose`. Arms use pose-module Home, not the joint Home of `*_arm_joint`; the end effectors do not return Home (when needed, motion control can home them separately). With `torso_joints` set, the waist is driven in joint space (a generic interface, not model-specific): each entry is `role:joint` with role `x`, `z`, `pitch` or `yaw`, written `role:-joint` when the joint turns against the waist convention (x forward, z up, pitch > 0 leaning forward, yaw > 0 left). The waist is sent as joint targets on `control/joint` with feedback from `feedback/joint_states`; roles without a joint read 0 and their `waist_*` axes are not driven by the headset; each role is bounded by its joint range from discover (x and z as absolute ranges, pitch and yaw intersected with `waist_*_limits_deg`). Lookie neo sets `torso_joints: ["z:torso_joint1", "pitch:torso_joint2"]`: kstone has no `torso_pose` there but two joint targets `torso_lift_joint` / `torso_pitch_joint` (same QP level), which are homed instead; the headset height (lean-compensated with `lean_pivot_m`, §8.1, so leaning alone does not move the lift) plus the right stick in z mode drive the lift, the lean drives the pitch. The arm targets are absolute in `chassis_base_link` and move with the lift target (`waist_z_rate`), so the arms cover the slow physical lift. Below the lift's lower joint limit the active arm targets keep going down (`arm_dz`, same rate), down to `waist_z_range` (neo: the Home gripper tip down to 0.04 m below the floor); the upper limit is not compensated, and the stick moves only the lift.
 - For each module, success requires all of the following:
   1. The corresponding `request_id` is found in `outcomes` with `applied=true`; polling starts as soon as possible after the request, and **not finding it within `outcome_timeout_s` is treated as failure** (outcomes is a ring buffer and the entry may be pushed out); when `applied=false`, `error` is written to the disable reason.
   2. Only the `home_state` value in a **snapshot that already contains that outcome** is accepted, and it subsequently reaches `succeeded`. `home_state` stays at the previous terminal state, so an old `succeeded` from before the request does not count; within one snapshot the outcome and the module state are consistent (it is already set to `waiting` on acceptance), so the result is determined correctly even when the robot is already at the Home point and `waiting/executing` is never seen at 30 Hz.
   3. `held_by` is `null` (the module itself holds control).
 - `timed_out` (kstone times from the "last progress") and `aborted` (motion interrupted by another input / skipped) are both failures.
 - Teleop does no interpolation; the motion is carried out by kstone.
-- During Homing only the index trigger is effective: the end effectors follow as usual (§10), and the other inputs (including B long press) are ignored.
+- During Homing, index triggers control the end effectors (§10), joysticks may drive the chassis, and B short press cancels Home. A/X/Y, grip triggers, B long press and waist fine-tuning are ignored.
 
 ## 12. Disable conditions
 
@@ -484,11 +489,13 @@ On Quest, a long press of the Home button to recenter resets the `local-floor` r
 | After both grip triggers are released, offset below the threshold | The arms are quantities local to $F_h$ and are not affected; waist yaw and chassis re-record their references at the next both-arms-engaged instant; `local-floor` keeps the floor height, so waist Z is unchanged; pitch takes only the body frame pitch and is not affected by translation / yaw |
 | While both arms are engaged, offset below the threshold | The waist yaw / chassis target changes by at most one threshold amount, and is rate limited by `waist_yaw_rate` and `chassis_vx_max/vy_max/w_max` |
 
-A recenter at any time never sends a jump to motion control. For the operator-facing requirements see [quick start §3](vr_teleop_quickstart.md#3-before-you-start).
+For operator-facing recenter requirements, see quick start §3.
 
 ## 13. Parameters
 
-Defaults are taken from `PARAMS` in `lookie_teleop/node.py`; `lookie_bringup/config/lookie_teleop/common.yaml` has the same values except for the velocity limits noted in the table, and the model `teleop.yaml` overrides only `body_axes` and the end effectors. Angles with the `_deg` suffix are in degrees; all others are in m, rad and s.
+Defaults are taken from `PARAMS` in `lookie_teleop/node.py`; `lookie_bringup/config/lookie_teleop/common.yaml` has the same values except for the velocity limits noted in the table. Model `teleop.yaml` files also override TCP, hip pivot, waist joints/Home, ranges and rates; node defaults are not the effective real-robot values. Angles with the `_deg` suffix are in degrees; all others are in m, rad and s.
+
+Both Neo end-effector configs override `joy_z_rate=0.015`, `waist_z_range=[-0.97,0.4]`, `waist_pitch_limits_deg=[-45,90]` and use waist joint Home. Neo gripper also overrides joystick `max_vx=1.0` and `max_wz=2.0`; other models retain the shared joystick rates, further clipped to the chassis limits from discover.
 
 | Group | Parameter | Default |
 | --- | --- | --- |
@@ -501,9 +508,10 @@ Defaults are taken from `PARAMS` in `lookie_teleop/node.py`; `lookie_bringup/con
 | Joystick waist offset | `joy_z_rate` / `joy_pitch_rate` | 0.10 m/s / 0.3 rad/s |
 | Mount | `headset_forward_axis` / `mount_max_deg` / `yaw_warn_deg` | `[1,0,0]` / 35 / 15 |
 | Calibration | `calib_x` / `calib_z` / `min_cross` / `max_side` / `spacing_tol` (warning only) | `[0.15,0.70]` / `[-0.60,0.30]` / 0.10 / 0.20 / 0.10 |
-| Mapping | `R_body_to_torso` (rpy) / `controller_tcp` (xyz + rpy) | `[0,0,0]` / all 0; all 0 (common.yaml); set per end effector in teleop.yaml. **Always given for the right controller** (+X pointing, +Y inward towards the palm, +Z up; xr_media converts the WebXR grip pose, whose origin is at the curled fingers); the left controller uses the mirror image (y, roll, yaw negated). xyz is given in the **rotated** frame: the frame is rotated by rpy and the point then lies xyz along the rotated axes ($T=R_y\cdot\text{Translate}(xyz)$, *not* the robot-industry $T=[R|xyz]$, so the point moves when rpy changes); that TCP frame level and forward maps to the end-effector Home orientation. Gripper: `[0.055,0,0.03,0,0.5236,0]` (5.5 cm ahead along the button-face plane, 3 cm along the panel normal, pitched 30°) → `*_gripper_tip`; Revo2 hand: `[0,0.05,0,0,0.5236,0]` (5 cm inward, on the pitch axis, so the rotation does not move it, pitch 30°) → `*_palm` (URDF, +0.07 m on the hand axis). §8.1 |
+| Mapping | `R_body_to_torso` (rpy) / `controller_tcp` (xyz + rpy) | `[0,0,0]` / all 0 (common.yaml); set per end effector in teleop.yaml. **Always given for the right controller** (+X pointing, +Y inward towards the palm, +Z up; xr_media converts the WebXR grip pose, whose origin is at the curled fingers); the left controller uses the mirror image (y, roll, yaw negated). xyz is given in the **rotated** frame: the frame is rotated by rpy and the point then lies xyz along the rotated axes ($T=R_{\mathrm{rpy}}\cdot\text{Translate}(xyz)$, *not* the robot-industry $T=[R\mid xyz]$, so the point moves when rpy changes); that TCP frame level and forward maps to the end-effector Home orientation. Gripper: `[0.055,0,0.03,0,0.5236,0]` (5.5 cm ahead along the button-face plane, 3 cm along the panel normal, pitched 30°) → `*_gripper_tip`; Revo2 hand: `[0,0.05,0,0,0.5236,0]` (5 cm inward, on the pitch axis, so the rotation does not move it, pitch 30°) → `*_palm` (URDF, +0.07 m on the hand axis). §8.1 |
 | Mapping | `lean_pivot_m` | 0 (neo, trio: 0.27, §8.1, §8.2) |
 | Waist | `k_x` / `k_z` / `k_pitch` | 1.0 / 1.0 / 1.0 |
+| Waist joint mapping | `torso_joints` | Unset (uses `torso_pose`); Neo: `["z:torso_joint1", "pitch:torso_joint2"]`, see §11 |
 | Waist Z range (relative to A) | `waist_z_range` | `[-0.8, 0.15]` |
 | Waist rate limits | `waist_x_rate` / `waist_z_rate` / `waist_pitch_rate` / `waist_yaw_rate` | 0.2 m/s / 0.2 m/s / 0.8 rad/s / 1.0 rad/s |
 | Waist pitch absolute limits | `waist_pitch_limits_deg` | `[-30, 90]` (backward, forward) |
@@ -521,17 +529,17 @@ Defaults are taken from `PARAMS` in `lookie_teleop/node.py`; `lookie_bringup/con
 
 | Item | Constraint | Handling |
 | --- | --- | --- |
-| Residual Home state | `home_state` stays at the previous terminal state; after a joint Home ends, the joint module keeps holding control (the pose module `held_by` is the joint module) | Determined by the §11 rules; only the pose module Home is used |
+| Residual Home state | `home_state` stays at the previous terminal state; homing another module changes ownership | Determined by §11; arm pose modules and the configured Neo waist joint modules |
 | Simulation without drivers | `fresh=false` when no driver feedback is connected | `require_fresh` parameter, may be turned off for pure simulation debugging; must be on for the real robot |
 | outcomes ring buffer | Old results are pushed out | Poll as soon as possible after the request; not found means failure and disable |
 | XR tracking state | xr_media_ros publishes only while tracking, with no separate flag | Determined by receive timeout (§12) |
 | Haptic feedback | Depends on headset browser support; no vibrator during hand tracking | Haptic confirmation on long press / grip trigger takeover (§5); failure does not affect operation; the state is still authoritative in `~/status` |
 | Centre of mass / self-collision | kstone has the `com` and `self_collision` modules | Teleop does not intervene; left to motion control |
 | Multiple teleop nodes | Two teleop nodes sending targets at the same time pre-empt each other | Run only one teleop node at a time |
-| Headset settings | The safety boundary, wear-detection sleep and Home button recenter all interrupt teleoperation | The operator configures the headset as in [quick start §3](vr_teleop_quickstart.md#3-before-you-start); for recenter behaviour see §12.1 |
+| Headset settings | The safety boundary, wear-detection sleep and Home button recenter all interrupt teleoperation | Configure as in quick start §3; for recenter behaviour see §12.1 |
 | Head | The motion control layer automatically gazes at the two arm ends | Teleop sends no head target |
 | Chest-mount yaw deviation | Cannot be calibrated, only warned about | §6.2 |
-| Control ownership | kstone determines the holder by "last target received" | Teleop controls the arms / waist only through the pose modules and does not mix in arm joint targets |
+| Control ownership | Arm/waist modules use the existing priority and target arbitration; chassis velocity outranks pose | Arms use pose targets; waist uses configured pose or joint targets; continuously rewritten chassis poses resume after stopping zeros expire |
 | Chassis pose frame | The actual value of `world_frame` (e.g. `odom`) is determined by the kstone configuration | Read from `discover` at startup, not hard-coded |
 
 ## 15. Package structure
@@ -566,7 +574,8 @@ lookie_bringup/
 │   └── teleop.yaml                  # body_axes + end effectors (ee_modules / ee_open / ee_close)
 ├── config/xr_media_ros/xr_media.yaml   # xr_media_ros: XR card only, media not configured
 ├── config/lookie_teleop/common.yaml    # tuning shared by all models, overridden by teleop.yaml
-└── launch/teleop.launch.py          # xr_media_ros + lookie_teleop, does not start kstone_ros
+├── config/twist_mux.yaml              # velocity sources, priorities and timeouts
+└── launch/teleop.launch.py          # xr_media_ros + lookie_teleop + twist_mux, does not start kstone_ros
 ```
 
 ```bash
@@ -578,7 +587,7 @@ ros2 launch lookie_bringup teleop.launch.py
 | Level | Content |
 | --- | --- |
 | Unit | Long press / double-press-and-hold timing; mount decomposition round trip; arm mapping midpoint 1:1 (spacing mismatch is warning only); each calibration check rejection / warning; workspace clamp (midline may be crossed, each arm independent); catch-up convergence / too fast / timeout; chassis divergence protection (faults only when the base moves away from the target, not when it lags but approaches); return Home determination (outcome not accepted / timeout, old succeeded, fast completion, timed_out/aborted, held_by occupied); each disable trigger |
-| State machine | All transition edges; only the index trigger effective during Homing; only B long press and the index trigger effective when Disabled; reference re-recorded after the joystick is released and the chassis has settled; references at the Y switch instant |
+| State machine | All transition edges; index triggers, chassis joysticks and B short press work during Homing; only B long press and index triggers work when Disabled; reference re-recorded after joystick release and settling or wait timeout; references at the Y switch instant |
 | Integration | kstone_ros + xr_media_ros (or replayed xr data): A → both arms Active → waist / chassis following → boundary → B return Home |
 | Before real-robot tests | Under neo (`body_axes: [chassis, waist_z, waist_pitch]`) the headset drives lift and pitch, plus chassis forward and yaw after Y; Y switch under trio; disconnecting a controller / exiting XR only stops the arms without disabling |
 

@@ -11,7 +11,7 @@ The operator fixes the headset to their chest and holds one controller in each h
 - **Hand motion** → the robot's arms follow
 - **Index triggers** → open and close the end effectors
 - **Body motion** → drives the robot's waist or chassis
-- **Joysticks** → directly drive the chassis and fine-tune the waist at any time
+- **Joysticks** → drive the chassis during Homing, Homed or teleoperation; waist fine-tuning works only during teleoperation
 
 ```mermaid
 flowchart LR
@@ -27,12 +27,12 @@ flowchart LR
         E["Waist"]
         F["Chassis"]
     end
-    A -- "1:1 follow" --> D
+    A -- "Double-press and hold grip<br/>1:1 follow" --> D
     T -- "Open / close" --> G
-    B -- "Waist mode" --> E
-    B -- "Chassis mode (omni chassis models only)" --> F
-    C -- "Translate / turn" --> F
-    C -- "Lift / pitch fine-tuning" --> E
+    B -- "Both arms Active<br/>Waist mode: all waist axes<br/>Chassis mode: lift / pitch" --> E
+    B -- "Both arms Active and chassis mode<br/>Omni: forward/back / strafe / turn<br/>Differential: forward/back / turn" --> F
+    C -- "Homing / Homed / teleoperation<br/>Forward/back / strafe / turn (no differential strafe)" --> F
+    C -- "Teleoperation only<br/>Lift / pitch fine-tuning" --> E
 ```
 
 > The arms only follow your hand motion **relative to your body**. When you walk or turn, the robot's arm pose stays the same as long as your hands stay still relative to your body.
@@ -224,7 +224,7 @@ flowchart LR
 | Robot arm stops and does not follow after engaging | The hand was outside the engage limit when engaging | Move your hand back near the arms' initial pose; the arm then follows freely |
 | Arm does not move while holding the grip trigger | Not double-pressed; not calibrated; arm is catching up | Double-press and hold; complete calibration; hold your hand still and wait |
 | Robot does not respond when walking or squatting | Only one grip trigger held; wrong mode; joystick in use | Hold both grip triggers at the same time; long press Y to switch modes; release the joystick |
-| Long press Y does nothing | Not homed / calibrated, or the model has no chassis | Long press A first |
+| Long press Y does nothing | Not homed, or no chassis pose interface | Long press B to return Home first; mode switching works when Homed, but body following still needs calibration and both arms Active |
 | Waist is higher / lower or leans further forward / back than you | Offset during calibration | Fine-tune with right joystick up/down; long press X to switch to pitch fine-tuning |
 | Teleoperation stops suddenly | Safety protection triggered | Clear the cause, then long press B and then A |
 | One arm suddenly stops while the other works normally | That controller lost tracking, disconnected, jumped, or is too far from your body | Move the controller back into tracking range and close to your body, then double-press and hold the grip trigger |
