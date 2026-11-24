@@ -36,11 +36,11 @@ repositories:
   lookie_neo_base:
     type: git
     url: https://github.com/AgilexOpensource/lookie_neo_base.git
-    version: 9d3a2dc08b600f8cf2b8d32bd63feae4e6c64696
+    version: e86a85e207d8effca51736c708ca6da0d15f8c64
   lookie_trio_base:
     type: git
     url: https://github.com/AgilexOpensource/lookie_trio_base.git
-    version: 8be6591169cf905284f8f5e1ae28c146dfae5628
+    version: a2043eaf59569f1247e77d95dd21e29a22a8f49e
   ugv_sdk:
     type: git
     url: https://github.com/westonrobot/ugv_sdk.git
